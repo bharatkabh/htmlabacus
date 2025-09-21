@@ -174,9 +174,7 @@ It calls the "brain" function, handleBeadTap(b), to execute the actual move logi
             function createBead(v,r,i,h) { const b=document.createElement('div'); b.className='bead '+(h?'heaven-bead':'earth-bead'); b.dataset.value=v;b.dataset.rod=r;b.dataset.index=i; return b; }
 
 
-
-
-            Of course. That code is responsible for dynamically building the entire visual structure of the abacus—all the rods and beads—when the page first loads.
+ Of course. That code is responsible for dynamically building the entire visual structure of the abacus—all the rods and beads—when the page first loads.
 
 Let's break it down into its two parts: the main loop and the helper function.
 
