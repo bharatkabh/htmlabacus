@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Modern Touch Abacus</title>
+    <style>
+        /* --- Modern Theming and Sizing --- */
+        :root {
+            --background-color: #f0f2f5;
+            --frame-color: #ffffff;
+            --rod-color: #d1d5db; /* Cool Gray 300 */
+            --bar-color: #4b5563;  /* Cool Gray 600 */
+            --earth-bead-color: #2563eb;  /* Blue 600 */
+            --heaven-bead-color: #16a34a; /* Green 600 */
+            --highlight-color: #60a5fa; /* Blue 400 */
+            --text-color: #111827; /* Cool Gray 900 */
+            
+            --bead-size: 40px;
+            --bead-margin: 5px;
+            --rod-width: 6px;
+            
+            /* --- ADJUSTMENTS HERE --- */
+            --bar-height: 20px; /* FIX: Increased bar thickness */
+            --bead-move-distance: 48px; /* FIX: Reduced travel distance to prevent overlap */
+        }
+
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            background-color: var(--background-color);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+            touch-action: manipulation;
+        }
+
+        .abacus-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 15px;
+            box-sizing: border-box;
+            width: 100%;
+            max-width: 800px;
+        }
+
+        #result-display {
+            background-color: var(--frame-color);
+            border: 2px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 12px 24px;
+            font-size: 2.5em;
+            font-weight: 600;
+            color: var(--text-color);
+            margin-bottom: 25px;
+            min-width: 85%;
+            text-align: right;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+            letter-spacing: 2px;
+        }
+
+        #abacus-frame {
+            display: flex;
+            justify-content: space-around;
+            background-color: var(--frame-color);
+            border: 2px solid #e5e7eb;
+            border-radius: 16px;
+            padding: 20px 10px;
+            width: 100%;
+            height: 320px;
+            position: relative;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+        }
+
+        #center-bar {
+            position: absolute;
+            width: 100%;
+            height: var(--bar-height);
+            background-color: var(--bar-color);
+            top: 30%;
+            left: 0;
+            z-index: 1;
+            border-radius: 6px;
+        }
+
+        .rod {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: center;
+            width: var(--rod-width);
+            height: 100%;
+            background-color: var(--rod-color);
+            border-radius: 3px;
+            position: relative;
+        }
+        
+        .upper-deck {
+            height: 30%;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+        }
+
+        .lower-deck {
+            height: 70%;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            padding-top: var(--bar-height);
+            box-sizing: border-box;
+        }
+
+        .bead {
+            width: var(--bead-size);
+            height: var(--bead-size);
+            border-radius: 50%;
+            cursor: pointer;
+            z-index: 2;
+            position: relative;
+            margin: var(--bead-margin) 0;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+            transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .earth-bead {
+            background-color: var(--earth-bead-color);
+        }
+        
+        .heaven-bead {
+            background-color: var(--heaven-bead-color);
+        }
+        
+        .bead.highlight {
+            transform: scale(1.1);
+            box-shadow: 0 0 15px var(--highlight-color);
+        }
+        
+        .upper-deck .bead.active {
+            transform: translateY(var(--bead-move-distance));
+        }
+        
+        .lower-deck .bead.active {
+            transform: translateY(calc(-1 * var(--bead-move-distance)));
+        }
+        
+        @media (max-width: 600px) {
+            :root {
+                --bead-size: 35px;
+                /* --- ADJUSTMENT FOR MOBILE --- */
+                --bead-move-distance: 40px; 
+            }
+            #result-display {
+                font-size: 2em;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="abacus-container">
+        <div id="result-display">0</div>
+        <div id="abacus-frame">
+            <div id="center-bar"></div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const abacusFrame = document.getElementById('abacus-frame');
+            const resultDisplay = document.getElementById('result-display');
+            const NUM_RODS = 13;
+
+            // --- 1. Create the Abacus Structure ---
+            function createAbacus() {
+                for (let i = 0; i < NUM_RODS; i++) {
+                    const rod = document.createElement('div');
+                    rod.classList.add('rod');
+                    rod.dataset.rodIndex = i;
+
+                    const upperDeck = document.createElement('div');
+                    upperDeck.classList.add('upper-deck');
+                    upperDeck.appendChild(createBead(5, i, 0, true));
+                    
+                    const lowerDeck = document.createElement('div');
+                    lowerDeck.classList.add('lower-deck');
+                    for (let j = 0; j < 4; j++) {
+                        lowerDeck.appendChild(createBead(1, i, j, false));
+                    }
+
+                    rod.appendChild(upperDeck);
+                    rod.appendChild(lowerDeck);
+                    abacusFrame.appendChild(rod);
+                }
+            }
+
+            function createBead(value, rod, index, isHeavenBead) {
+                const bead = document.createElement('div');
+                bead.classList.add('bead');
+                bead.dataset.value = value;
+                bead.dataset.rod = rod;
+                bead.dataset.index = index;
+                bead.classList.add(isHeavenBead ? 'heaven-bead' : 'earth-bead');
+                return bead;
+            }
+
+            // --- 2. Handle Touch Interaction ---
+            function setupEventListeners() {
+                abacusFrame.addEventListener('touchstart', (e) => {
+                    if (e.target.classList.contains('bead')) {
+                        e.preventDefault();
+                        const bead = e.target;
+                        bead.classList.add('highlight');
+
+                        const handleEnd = () => {
+                            bead.classList.remove('highlight');
+                            handleBeadTap(bead);
+                            bead.removeEventListener('touchend', handleEnd);
+                            bead.removeEventListener('touchcancel', handleEnd);
+                        };
+
+                        bead.addEventListener('touchend', handleEnd);
+                        bead.addEventListener('touchcancel', handleEnd);
+                    }
+                });
+            }
+            
+            function handleBeadTap(tappedBead) {
+                const isHeavenBead = tappedBead.classList.contains('heaven-bead');
+
+                if (isHeavenBead) {
+                    tappedBead.classList.toggle('active');
+                    updateCalculation();
+                    return;
+                }
+
+                const rod = tappedBead.closest('.rod');
+                const earthBeads = Array.from(rod.querySelectorAll('.earth-bead'));
+                const tappedIndex = parseInt(tappedBead.dataset.index, 10);
+                const isTappedBeadActive = tappedBead.classList.contains('active');
+
+                if (isTappedBeadActive) {
+                    const beadBelow = earthBeads[tappedIndex + 1];
+                    if (!beadBelow || !beadBelow.classList.contains('active')) {
+                        tappedBead.classList.remove('active');
+                    }
+                } else {
+                    const beadAbove = earthBeads[tappedIndex - 1];
+                    if (!beadAbove || beadAbove.classList.contains('active')) {
+                        tappedBead.classList.add('active');
+                    }
+                }
+                
+                updateCalculation();
+            }
+
+            // --- 3. Calculate and Display the Result ---
+            function updateCalculation() {
+                let totalValue = 0n;
+                for (let i = 0; i < NUM_RODS; i++) {
+                    const rod = document.querySelector(`.rod[data-rod-index='${i}']`);
+                    let rodValue = 0;
+                    
+                    rod.querySelectorAll('.bead.active').forEach(bead => {
+                        rodValue += parseInt(bead.dataset.value, 10);
+                    });
+                    
+                    const placeValue = 10n ** BigInt(NUM_RODS - 1 - i);
+                    totalValue += BigInt(rodValue) * placeValue;
+                }
+                
+                resultDisplay.textContent = totalValue.toLocaleString();
+            }
+
+            // --- Initialize ---
+            createAbacus();
+            setupEventListeners();
+        });
+    </script>
+
+</body>
+</html>
