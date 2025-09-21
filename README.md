@@ -82,7 +82,7 @@ t.toLocaleString(): This is a handy built-in function that converts the final Bi
 
 
 
-===============================================================================================================================================================================================================================
+================================================================================================================
 
 
  const handleBeadTap = (b)=>{if(tutorial)return;if(b.classList.contains('heaven-bead')){b.classList.toggle('active')}else{const r=b.closest('.rod'),bs=Array.from(r.querySelectorAll('.earth-bead')),x=parseInt(b.dataset.index);if(b.classList.contains('active')){if(!bs[x+1]||!bs[x+1].classList.contains('active'))b.classList.remove('active')}else{if(!bs[x-1]||bs[x-1].classList.contains('active'))b.classList.add('active')}}updateCalculation()};
