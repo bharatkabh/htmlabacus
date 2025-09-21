@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Touch Abacus</title>
+    <style>
+        /* --- Basic Setup & Theming --- */
+        :root {
+            --frame-color: #8B4513; /* SaddleBrown */
+            --bead-color: #D2691E;  /* Chocolate */
+            --rod-color: #DEB887;   /* BurlyWood */
+            --bar-color: #693409;
+            --highlight-color: #FFA500; /* Orange */
+            --background-color: #F5DEB3; /* Wheat */
+            --text-color: #4a2c0f;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            background-color: var(--background-color);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+            /* Prevents scrolling and double-tap zoom on mobile */
+            touch-action: none;
+        }
+
+        /* --- Main Abacus Container --- */
+        .abacus-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            box-sizing: border-box;
+            width: 100%;
+            max-width: 800px;
+        }
+
+        /* --- Result Display --- */
+        #result-display {
+            background-color: #fff;
+            border: 4px solid var(--frame-color);
+            border-radius: 10px;
+            padding: 10px 20px;
+            font-size: 2.5em;
+            color: var(--text-color);
+            margin-bottom: 20px;
+            font-weight: bold;
+            min-width: 80%;
+            text-align: right;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            overflow-x: auto;
+            white-space: nowrap;
+        }
+
+        /* --- Abacus Frame & Structure --- */
+        #abacus-frame {
+            display: flex;
+            justify-content: space-around;
+            background-color: var(--frame-color);
+            border: 8px solid var(--bar-color);
+            border-radius: 15px;
+            padding: 20px 10px;
+            width: 100%;
+            height: 300px;
+            position: relative;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        #center-bar {
+            position: absolute;
+            width: 100%;
+            height: 15px;
+            background-color: var(--bar-color);
+            top: 25%; /* Positioned between heaven and earth beads */
+            left: 0;
+            z-index: 1;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.4) inset;
+        }
+
+        /* --- Rods --- */
+        .rod {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: center;
+            width: 8px;
+            height: 100%;
+            background-color: var(--rod-color);
+            border-radius: 4px;
+            position: relative;
+        }
+        
+        .bead-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+        }
+
+        .upper-deck {
+            height: 25%;
+            justify-content: flex-end; /* Beads start at the top */
+        }
+
+        .lower-deck {
+            height: 75%;
+            justify-content: flex-start; /* Beads start at the bottom */
+            padding-top: 15px; /* Space for the center bar */
+        }
+
+        /* --- Beads --- */
+        .bead {
+            width: 40px;
+            height: 25px;
+            background: radial-gradient(circle at 60% 40%, var(--bead-color), #a0522d);
+            border-radius: 50%;
+            border: 1px solid var(--bar-color);
+            cursor: pointer;
+            z-index: 2;
+            position: relative;
+            margin: 4px 0;
+            box-shadow: 0 3px 6px rgba(0, 0, 0, 0.4);
+            transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        /* Highlight effect on touch */
+        .bead.highlight {
+            transform: scale(1.15);
+            box-shadow: 0 0 15px var(--highlight-color);
+        }
+        
+        /* Bead Active State (Moved to center bar) */
+        .upper-deck .bead.active {
+            transform: translateY(35px);
+        }
+        
+        .lower-deck .bead.active {
+            transform: translateY(-35px);
+        }
+        
+        /* Responsive Adjustments for Smaller Screens */
+        @media (max-width: 600px) {
+            .abacus-container {
+                padding: 10px;
+            }
+            #result-display {
+                font-size: 2em;
+            }
+            .bead {
+                width: 35px;
+                height: 22px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="abacus-container">
+        <div id="result-display">0</div>
+        <div id="abacus-frame">
+            <div id="center-bar"></div>
+            </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const abacusFrame = document.getElementById('abacus-frame');
+            const resultDisplay = document.getElementById('result-display');
+            const NUM_RODS = 13;
+
+            // --- 1. Create the Abacus Structure ---
+            function createAbacus() {
+                for (let i = 0; i < NUM_RODS; i++) {
+                    const rod = document.createElement('div');
+                    rod.classList.add('rod');
+                    rod.dataset.rodIndex = i;
+
+                    // Upper deck (Heaven beads)
+                    const upperDeck = document.createElement('div');
+                    upperDeck.classList.add('bead-group', 'upper-deck');
+                    const heavenBead = createBead(5, i, 0, true);
+                    upperDeck.appendChild(heavenBead);
+                    
+                    // Lower deck (Earth beads)
+                    const lowerDeck = document.createElement('div');
+                    lowerDeck.classList.add('bead-group', 'lower-deck');
+                    for (let j = 0; j < 4; j++) {
+                        const earthBead = createBead(1, i, j, false);
+                        lowerDeck.appendChild(earthBead);
+                    }
+
+                    rod.appendChild(upperDeck);
+                    rod.appendChild(lowerDeck);
+                    abacusFrame.appendChild(rod);
+                }
+            }
+
+            function createBead(value, rod, index, isHeavenBead) {
+                const bead = document.createElement('div');
+                bead.classList.add('bead');
+                bead.dataset.value = value;
+                bead.dataset.rod = rod;
+                bead.dataset.index = index;
+                if (isHeavenBead) {
+                    bead.classList.add('heaven-bead');
+                } else {
+                    bead.classList.add('earth-bead');
+                }
+                return bead;
+            }
+
+            // --- 2. Handle Touch Interaction ---
+            function setupEventListeners() {
+                abacusFrame.addEventListener('touchstart', (e) => {
+                    // We use one listener on the parent for efficiency
+                    if (e.target.classList.contains('bead')) {
+                        e.preventDefault(); // Prevents scrolling
+                        const bead = e.target;
+                        
+                        // Add highlight effect
+                        bead.classList.add('highlight');
+
+                        // The main logic runs on 'touchend' to simulate a tap
+                        bead.addEventListener('touchend', handleBeadTap, { once: true });
+                        bead.addEventListener('touchcancel', () => {
+                            bead.classList.remove('highlight');
+                            bead.removeEventListener('touchend', handleBeadTap);
+                        }, { once: true });
+                    }
+                });
+            }
+
+            function handleBeadTap(e) {
+                const tappedBead = e.currentTarget;
+                tappedBead.classList.remove('highlight');
+                
+                const isHeavenBead = tappedBead.classList.contains('heaven-bead');
+                const rodIndex = tappedBead.dataset.rod;
+                const rod = document.querySelector(`.rod[data-rod-index='${rodIndex}']`);
+
+                if (isHeavenBead) {
+                    // Heaven beads are simple: just toggle their active state
+                    tappedBead.classList.toggle('active');
+                } else {
+                    // Earth beads move as a group
+                    const isTappedBeadActive = tappedBead.classList.contains('active');
+                    const earthBeads = Array.from(rod.querySelectorAll('.earth-bead'));
+                    const tappedIndex = parseInt(tappedBead.dataset.index, 10);
+                    
+                    if (isTappedBeadActive) {
+                        // Deactivate this bead and all active beads above it
+                        earthBeads.forEach((bead, index) => {
+                            if (index <= tappedIndex) {
+                                bead.classList.remove('active');
+                            }
+                        });
+                    } else {
+                        // Activate this bead and all inactive beads below it
+                        earthBeads.forEach((bead, index) => {
+                            if (index >= tappedIndex) {
+                                bead.classList.add('active');
+                            }
+                        });
+                    }
+                }
+                
+                updateCalculation();
+            }
+
+
+            // --- 3. Calculate and Display the Result ---
+            function updateCalculation() {
+                let totalValue = 0;
+                for (let i = 0; i < NUM_RODS; i++) {
+                    const rod = document.querySelector(`.rod[data-rod-index='${i}']`);
+                    let rodValue = 0;
+                    
+                    const activeBeads = rod.querySelectorAll('.bead.active');
+                    activeBeads.forEach(bead => {
+                        rodValue += parseInt(bead.dataset.value, 10);
+                    });
+                    
+                    // Calculate place value (right to left: 1, 10, 100...)
+                    const placeValue = Math.pow(10, NUM_RODS - 1 - i);
+                    totalValue += rodValue * placeValue;
+                }
+                
+                // Format with commas and display
+                resultDisplay.textContent = totalValue.toLocaleString();
+            }
+
+            // --- Initialize ---
+            createAbacus();
+            setupEventListeners();
+        });
+    </script>
+
+</body>
+</html>
