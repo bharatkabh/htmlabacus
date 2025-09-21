@@ -4,7 +4,7 @@ html abacus mobile firendly
 That line of code is the "brain" of the abacus, responsible for reading the beads and calculating the final number. Let's break it down into simple, understandable parts.
 
 
-const updateCalculation = () => { let t=0n;abacusFrame.querySelectorAll('.rod').forEach((r,i)=>{let v=0;r.querySelectorAll('.bead.active').forEach(b=>v+=parseInt(b.dataset.value));t+=BigInt(v)*(10n**BigInt(NUM_RODS-1-i))});resultDisplay.textContent=t.toLocaleString()};
+**const updateCalculation = () => { let t=0n;abacusFrame.querySelectorAll('.rod').forEach((r,i)=>{let v=0;r.querySelectorAll('.bead.active').forEach(b=>v+=parseInt(b.dataset.value));t+=BigInt(v)*(10n**BigInt(NUM_RODS-1-i))});resultDisplay.textContent=t.toLocaleString()};**
 
 
 
@@ -85,8 +85,8 @@ t.toLocaleString(): This is a handy built-in function that converts the final Bi
 
 
 
- const handleBeadTap = (b)=>{if(tutorial)return;if(b.classList.contains('heaven-bead')){b.classList.toggle('active')}else{const r=b.closest('.rod'),bs=Array.from(r.querySelectorAll('.earth-bead')),x=parseInt(b.dataset.index);if(b.classList.contains('active')){if(!bs[x+1]||!bs[x+1].classList.contains('active'))b.classList.remove('active')}else{if(!bs[x-1]||bs[x-1].classList.contains('active'))b.classList.add('active')}}updateCalculation()};
-            abacusFrame.addEventListener('touchstart',(e)=>{if(e.target.classList.contains('bead')){e.preventDefault();const b=e.target;if(tutorial)return;b.classList.add('highlight');const end=()=>{b.classList.remove('highlight');handleBeadTap(b);b.removeEventListener('touchend',end);b.removeEventListener('touchcancel',end)};b.addEventListener('touchend',end);b.addEventListener('touchcancel',end)}});
+** const handleBeadTap = (b)=>{if(tutorial)return;if(b.classList.contains('heaven-bead')){b.classList.toggle('active')}else{const r=b.closest('.rod'),bs=Array.from(r.querySelectorAll('.earth-bead')),x=parseInt(b.dataset.index);if(b.classList.contains('active')){if(!bs[x+1]||!bs[x+1].classList.contains('active'))b.classList.remove('active')}else{if(!bs[x-1]||bs[x-1].classList.contains('active'))b.classList.add('active')}}updateCalculation()};
+            abacusFrame.addEventListener('touchstart',(e)=>{if(e.target.classList.contains('bead')){e.preventDefault();const b=e.target;if(tutorial)return;b.classList.add('highlight');const end=()=>{b.classList.remove('highlight');handleBeadTap(b);b.removeEventListener('touchend',end);b.removeEventListener('touchcancel',end)};b.addEventListener('touchend',end);b.addEventListener('touchcancel',end)}});**
 
 
 
