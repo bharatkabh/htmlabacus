@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Stick Master</title>
+    <style>
+        /* Prevents scrolling and elastic bounce on mobile */
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #000;
+        }
+        /* Flex container to center the canvas */
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Courier New', Courier, monospace;
+        }
+        canvas {
+            background-color: white;
+            /* The canvas will be scaled with JavaScript, but this helps */
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+        #instructions {
+            position: absolute;
+            top: 10px;
+            color: white;
+            text-align: center;
+            font-size: 1.2em;
+            text-shadow: 2px 2px 4px #000;
+            z-index: 10;
+        }
+        /* Styles for the on-screen touch controls */
+        .touch-controls {
+            position: absolute;
+            bottom: 20px;
+            width: 100%;
+            display: none; /* Hidden by default, shown via JS on touch devices */
+            justify-content: space-between;
+            align-items: flex-end;
+            z-index: 100;
+            padding: 0 20px;
+            box-sizing: border-box;
+        }
+        .d-pad, .action-buttons {
+            display: flex;
+            gap: 15px;
+        }
+        .touch-button {
+            width: 60px;
+            height: 60px;
+            background-color: rgba(0, 0, 0, 0.4);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 24px;
+            font-weight: bold;
+            border: 2px solid rgba(255, 255, 255, 0.5);
+            user-select: none; /* Prevents text selection on tap */
+        }
+        .action-buttons {
+            flex-direction: column-reverse; /* Stack buttons vertically */
+        }
+    </style>
+</head>
+<body>
+
+<div id="instructions">
+    'A'/'D': Move | 'W': Jump | 'F': Punch | 'G': Kick | 'L-SHIFT': Backflip | 'SPACE' (Lvl 2): Shoot
+</div>
+
+<div class="touch-controls" id="touchControls">
+    <div class="d-pad">
+        <div class="touch-button" id="btnLeft">⇦</div>
+        <div class="touch-button" id="btnRight">⇨</div>
+    </div>
+    <div class="action-buttons">
+        <div class="touch-button" id="btnFlip">↶</div>
+        <div class="touch-button" id="btnKick">K</div>
+        <div class="touch-button" id="btnPunch">P</div>
+        <div class="touch-button" id="btnJump">↑</div>
+        <div class="touch-button" id="btnShoot" style="display: none;">S</div>
+    </div>
+</div>
+
+<canvas id="gameCanvas"></canvas>
+
+<script>
+    // --- SETUP ---
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    // Base resolution
+    const gameWidth = 800;
+    const gameHeight = 600;
+    canvas.width = gameWidth;
+    canvas.height = gameHeight;
+
+    // --- GAME CONSTANTS ---
+    const GRAVITY = 0.6;
+    const PLAYER_SPEED = 5;
+    const JUMP_STRENGTH = 13;
+    const FLIP_X_SPEED = 6;
+    const FLIP_Y_SPEED = 8;
+    const CHARACTER_WIDTH = 20;
+    const CHARACTER_HEIGHT = 50;
+    const PUNCH_DAMAGE = 15;
+    const KICK_DAMAGE = 20;
+    const BULLET_DAMAGE = 10;
+    const POWER_BULLET_DAMAGE = 25;
+    const KNOCKBACK_X = 8;
+    const KNOCKBACK_Y = 4;
+    const POWERUP_DURATION = 420; // 7 seconds at 60fps
+
+    // --- GAME STATE ---
+    let player;
+    let enemies = [];
+    let platforms = [];
+    let bullets = [];
+    let bloodParticles = [];
+    let keys = {};
+    let gameOver = false;
+    let gameOverMessage = '';
+    let currentLevel = 1;
+    let levelTransitioning = false;
+    let globalTimer = 0;
+    let playerLives = 2;
+
+    // --- POWER-UP STATE ---
+    let powerUp = null;
+    let nextPowerUpSpawnTimer = 300;
+    const powerUpSpawnLocations = [
+        { x: 400, y: 180 }, { x: 175, y: 300 }, { x: 625, y: 300 }, { x: 400, y: 430 }
+    ];
+
+    // --- CHARACTER & LEVEL SETUP ---
+    function createCharacter(x, y, isPlayer = false) {
+        return {
+            x, y, vx: 0, vy: 0,
+            width: CHARACTER_WIDTH, height: CHARACTER_HEIGHT,
+            health: 100, onGround: false, direction: 1,
+            shootCooldown: 0, punchCooldown: 0, kickCooldown: 0, flipCooldown: 0,
+            isPunching: false, isKicking: false, isFlipping: false, invulnerable: false,
+            justHit: false,
+            speedMultiplier: 0.9 + Math.random() * 0.3,
+            actionState: 'chasing',
+            actionTimer: 60 + Math.random() * 60,
+            isPoweredUp: false,
+            powerUpTimer: 0
+        };
+    }
+
+    function respawnPlayer() {
+        player = createCharacter(100, 500, true);
+    }
+    
+    function setupLevel1() { enemies = [createCharacter(650, 150), createCharacter(150, 280), createCharacter(400, 530)]; }
+    function setupLevel2() { enemies = [createCharacter(700, 150), createCharacter(100, 150), createCharacter(400, 400)]; }
+    function createPlatforms() { platforms = [{x:0,y:580,width:800,height:20},{x:200,y:450,width:400,height:15},{x:50,y:320,width:250,height:15},{x:500,y:320,width:250,height:15},{x:0,y:200,width:350,height:15},{x:450,y:200,width:350,height:15}]; }
+
+    // --- EVENT LISTENERS (KEYBOARD & TOUCH) ---
+    function setupInput() {
+        // Keyboard listeners
+        window.addEventListener('keydown', (e) => {
+            if (['Space', 'KeyW', 'KeyA', 'KeyD'].includes(e.code)) {
+                e.preventDefault();
+            }
+            keys[e.code] = true;
+        });
+        window.addEventListener('keyup', (e) => { keys[e.code] = false; });
+        
+        // Touch listeners
+        const isTouchDevice = 'ontouchstart' in window;
+        if (isTouchDevice) {
+            document.getElementById('touchControls').style.display = 'flex';
+            document.getElementById('instructions').style.display = 'none'; // Hide keyboard instructions
+
+            const buttonMap = {
+                btnLeft: 'KeyA',
+                btnRight: 'KeyD',
+                btnJump: 'KeyW',
+                btnPunch: 'KeyF',
+                btnKick: 'KeyG',
+                btnFlip: 'ShiftLeft',
+                btnShoot: 'Space'
+            };
+
+            for (const [btnId, keyCode] of Object.entries(buttonMap)) {
+                const button = document.getElementById(btnId);
+                button.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    keys[keyCode] = true;
+                }, { passive: false });
+                button.addEventListener('touchend', (e) => {
+                    e.preventDefault();
+                    keys[keyCode] = false;
+                }, { passive: false });
+            }
+        }
+    }
+
+    // --- DRAWING FUNCTIONS ---
+    function drawStickman(character) {
+        ctx.save();
+        ctx.strokeStyle = character.isPoweredUp ? '#00FFFF' : 'black';
+        ctx.lineWidth = 3;
+
+        const x = character.x + character.width / 2;
+        const y = character.y;
+        
+        if (character.isFlipping) {
+            const flipProgress = (45 - character.flipCooldown) / 45;
+            ctx.translate(x, y + character.height / 2);
+            ctx.rotate(character.direction * flipProgress * 2 * Math.PI);
+            ctx.translate(-x, -(y + character.height / 2));
+        }
+
+        if (character !== player) {
+            const healthBarWidth = 40;
+            const healthBarHeight = 5;
+            const barX = x - healthBarWidth / 2;
+            const barY = y - 15;
+            ctx.fillStyle = '#c54242';
+            ctx.fillRect(barX, barY, healthBarWidth, healthBarHeight);
+            const healthPercentage = character.health / 100;
+            ctx.fillStyle = '#49c542';
+            ctx.fillRect(barX, barY, healthBarWidth * healthPercentage, healthBarHeight);
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(barX, barY, healthBarWidth, healthBarHeight);
+            ctx.lineWidth = 3;
+        }
+
+        const headRadius = 8;
+        const bodyLength = 20;
+        const armLength = 15;
+        const legLength = 20;
+        
+        ctx.beginPath();
+        ctx.arc(x, y + headRadius, headRadius, 0, Math.PI * 2);
+        ctx.moveTo(x, y + headRadius * 2);
+        ctx.lineTo(x, y + headRadius * 2 + bodyLength);
+        ctx.stroke();
+
+        const armY = y + headRadius * 2 + 5;
+        const legY = y + headRadius * 2 + bodyLength;
+
+        if (character.isFlipping) {
+            ctx.beginPath();
+            ctx.moveTo(x, armY); ctx.lineTo(x, armY + 10);
+            ctx.moveTo(x, legY); ctx.lineTo(x, legY - 10);
+            ctx.stroke();
+        } else if (character.isPunching) {
+            drawPunchAnimation(character, x, armY);
+        } else if (character.isKicking) {
+            drawKickAnimation(character, x, legY);
+        } else if (!character.onGround) {
+            const airTimeOffset = Math.sin(globalTimer / 10) * 2;
+            ctx.beginPath();
+            ctx.moveTo(x, armY); ctx.lineTo(x - 5 * character.direction, armY + 10);
+            ctx.moveTo(x, legY); ctx.lineTo(x + 5, legY + 10 + airTimeOffset);
+            ctx.moveTo(x, legY); ctx.lineTo(x - 5, legY + 10 - airTimeOffset);
+            ctx.stroke();
+        } else if (Math.abs(character.vx) > 1) {
+            const runCycle = Math.sin(globalTimer / 4);
+            ctx.beginPath();
+            ctx.moveTo(x, armY); ctx.lineTo(x + (armLength - 5) * character.direction * -runCycle, armY + 10);
+            ctx.moveTo(x, legY); ctx.lineTo(x + legLength * runCycle, legY + legLength);
+            ctx.moveTo(x, legY); ctx.lineTo(x - legLength * runCycle, legY + legLength);
+            ctx.stroke();
+        } else {
+            const breath = Math.sin(globalTimer / 20) * 1.5;
+            ctx.beginPath();
+            ctx.moveTo(x, armY); ctx.lineTo(x, armY + breath + 10);
+            ctx.moveTo(x, legY); ctx.lineTo(x - 8, legY + legLength);
+            ctx.moveTo(x, legY); ctx.lineTo(x + 8, legY + legLength);
+            ctx.stroke();
+        }
+        
+        ctx.restore();
+    }
+    
+    function drawPunchAnimation(character, x, armY) {
+        const punchProgress = (30 - character.punchCooldown) / 30;
+        let armExtension = 0;
+        if (punchProgress < 0.3) armExtension = -10 * (punchProgress / 0.3);
+        else if (punchProgress < 0.6) armExtension = -10 + 35 * ((punchProgress - 0.3) / 0.3);
+        else armExtension = 25 - 25 * ((punchProgress - 0.6) / 0.4);
+        ctx.beginPath();
+        ctx.moveTo(x, armY);
+        ctx.lineTo(x + armExtension * character.direction, armY + 5);
+        ctx.stroke();
+    }
+
+    function drawKickAnimation(character, x, legY) {
+        const kickProgress = (45 - character.kickCooldown) / 45;
+        let legExtension = 0;
+        let legAngle = 0;
+        if (kickProgress < 0.3) legAngle = -15 * (kickProgress / 0.3);
+        else if (kickProgress < 0.5) { legExtension = 25 * ((kickProgress - 0.3) / 0.2); legAngle = -15 + 15 * ((kickProgress - 0.3) / 0.2); }
+        else legExtension = 25 - 25 * ((kickProgress - 0.5) / 0.5);
+        ctx.beginPath();
+        ctx.moveTo(x, legY);
+        ctx.lineTo(x + legExtension * character.direction, legY + legAngle);
+        ctx.stroke();
+    }
+
+    function drawUI() {
+        ctx.font = '16px "Courier New"';
+        ctx.textAlign = 'left';
+        ctx.fillStyle = 'red';
+        ctx.fillRect(10, 10, 150, 15);
+        ctx.fillStyle = 'green';
+        ctx.fillRect(10, 10, 150 * (player.health / 100), 15);
+        ctx.strokeStyle = 'black';
+        ctx.strokeRect(10, 10, 150, 15);
+        ctx.fillStyle = 'black';
+        ctx.fillText('PLAYER', 15, 22);
+        
+        ctx.fillText(`LIVES: ${playerLives}`, 15, 45);
+
+        ctx.textAlign = 'center';
+        ctx.fillText(`LEVEL: ${currentLevel}`, canvas.width / 2, 25);
+        ctx.textAlign = 'right';
+        ctx.fillText(`ENEMIES REMAINING: ${enemies.length}`, canvas.width - 10, 25);
+        
+        if (player.isPoweredUp) {
+            const barWidth = 150;
+            const powerPercentage = player.powerUpTimer / POWERUP_DURATION;
+            ctx.textAlign = 'center';
+            ctx.fillStyle = 'black';
+            ctx.fillText('POWER', canvas.width / 2, 50);
+            ctx.fillStyle = '#888';
+            ctx.fillRect(canvas.width / 2 - barWidth / 2, 55, barWidth, 10);
+            ctx.fillStyle = '#00FFFF';
+            ctx.fillRect(canvas.width / 2 - barWidth / 2, 55, barWidth * powerPercentage, 10);
+            ctx.strokeStyle = 'black';
+            ctx.strokeRect(canvas.width / 2 - barWidth / 2, 55, barWidth, 10);
+        }
+        if (gameOver || levelTransitioning) {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = 'white';
+            ctx.textAlign = 'center';
+            if (gameOver) {
+                ctx.font = '60px "Courier New"';
+                ctx.fillText('GAME OVER', canvas.width / 2, canvas.height / 2 - 20);
+                ctx.font = '30px "Courier New"';
+                ctx.fillText(gameOverMessage, canvas.width / 2, canvas.height / 2 + 20);
+                ctx.font = '20px "Courier New"';
+                ctx.fillText('Tap or Press R to Restart', canvas.width / 2, canvas.height / 2 + 60);
+            } else {
+                ctx.font = '40px "Courier New"';
+                ctx.fillText(`LEVEL ${currentLevel - 1} COMPLETE!`, canvas.width / 2, canvas.height / 2);
+                ctx.font = '25px "Courier New"';
+                ctx.fillText(`Get ready for Level ${currentLevel}...`, canvas.width / 2, canvas.height / 2 + 40);
+            }
+        }
+    }
+    
+    function drawAll() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        platforms.forEach(p => { ctx.fillStyle = 'black'; ctx.fillRect(p.x, p.y, p.width, p.height); });
+        
+        if (powerUp) {
+            const pulse = Math.sin(globalTimer / 10) * 2;
+            ctx.fillStyle = '#00FFFF';
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(powerUp.x, powerUp.y, 8 + pulse, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+        }
+        drawStickman(player);
+        enemies.forEach(drawStickman);
+        bullets.forEach(b => {
+            ctx.fillStyle = b.isPowerShot ? '#00FFFF' : 'black';
+            ctx.fillRect(b.x - 2, b.y - 2, b.isPowerShot ? 6 : 4, b.isPowerShot ? 6 : 4);
+        });
+        bloodParticles.forEach(p => {
+            ctx.fillStyle = 'red';
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+            ctx.fill();
+        });
+    }
+
+    // --- UPDATE & LOGIC FUNCTIONS ---
+    function handleInput() {
+        const canMove = !player.isPunching && !player.isKicking && !player.isFlipping;
+        if (canMove) {
+            player.vx = keys['KeyA'] ? -PLAYER_SPEED : keys['KeyD'] ? PLAYER_SPEED : player.vx * 0.8;
+            if (keys['KeyD']) player.direction = 1;
+            if (keys['KeyA']) player.direction = -1;
+            if (keys['KeyW'] && player.onGround) { player.vy = -JUMP_STRENGTH; player.onGround = false; }
+        } else if (!player.isFlipping) {
+            player.vx *= 0.8;
+        }
+        
+        const canAct = !player.isPunching && !player.isKicking && !player.isFlipping;
+        if (canAct) {
+            if (keys['KeyF'] && player.punchCooldown <= 0) { player.isPunching = true; player.punchCooldown = 30; player.justHit = false; }
+            if (keys['KeyG'] && player.kickCooldown <= 0) { player.isKicking = true; player.kickCooldown = 45; player.justHit = false; }
+            if (keys['ShiftLeft'] && player.flipCooldown <= 0) { player.isFlipping = true; player.invulnerable = true; player.flipCooldown = 45; player.vy = -FLIP_Y_SPEED; player.vx = -FLIP_X_SPEED * player.direction; player.onGround = false; }
+            if (currentLevel === 2 && keys['Space'] && player.shootCooldown <= 0) {
+                shoot(player);
+                player.shootCooldown = player.isPoweredUp ? 15 : 25;
+            }
+        }
+    }
+
+    function updateCharacter(character) {
+        if (character.shootCooldown > 0) character.shootCooldown--;
+        if (character.punchCooldown > 0) character.punchCooldown--; else character.isPunching = false;
+        if (character.kickCooldown > 0) character.kickCooldown--; else character.isKicking = false;
+        if (character.flipCooldown > 0) character.flipCooldown--; else { character.isFlipping = false; character.invulnerable = false; }
+        if (character.isPoweredUp) {
+            character.powerUpTimer--;
+            if (character.powerUpTimer <= 0) {
+                character.isPoweredUp = false;
+            }
+        }
+
+        if (!character.isFlipping) character.vy += GRAVITY; else character.vy += GRAVITY * 0.6;
+        character.x += character.vx;
+        character.y += character.vy;
+        character.onGround = false;
+
+        if (character.vy >= 0) {
+            platforms.forEach(p => {
+                if (character.x < p.x + p.width && character.x + character.width > p.x &&
+                    character.y + character.height >= p.y && character.y + character.height <= p.y + p.height + 1) {
+                    character.y = p.y - character.height;
+                    character.vy = 0;
+                    character.onGround = true;
+                }
+            });
+        }
+        
+        if (character.x < 0) character.x = 0;
+        if (character.x + character.width > canvas.width) character.x = canvas.width - character.width;
+        
+        if (character.health <= 0 && character === player) {
+            playerLives--;
+            if (playerLives > 0) {
+                respawnPlayer();
+            } else {
+                gameOver = true;
+                gameOverMessage = 'YOU WERE DEFEATED';
+            }
+        }
+        if (character.y > canvas.height) {
+            if (character === player) {
+                playerLives--;
+                if (playerLives > 0) {
+                    respawnPlayer();
+                } else {
+                    gameOver = true;
+                    gameOverMessage = 'YOU FELL!';
+                }
+            } else {
+                character.health = 0;
+            }
+        }
+    }
+    
+    function updateEnemyAI(enemy) {
+        const distanceX = player.x - enemy.x;
+        const distanceY = Math.abs(player.y - enemy.y);
+        enemy.direction = Math.sign(distanceX);
+        enemy.actionTimer--;
+        
+        if (distanceY > 75) {
+            enemy.actionState = 'patrolling';
+        } else if (enemy.actionState === 'patrolling') {
+            enemy.actionState = 'chasing';
+        }
+
+        if (enemy.actionTimer <= 0) {
+            const choice = Math.random();
+            if (choice > 0.7 && distanceY <= 75) {
+                enemy.actionState = 'pausing';
+                enemy.actionTimer = 30 + Math.random() * 60;
+            } else {
+                enemy.actionState = 'chasing';
+                enemy.actionTimer = 60 + Math.random() * 120;
+            }
+        }
+        
+        if (enemy.actionState === 'patrolling') {
+            let onEdge = true;
+            platforms.forEach(p => {
+                if (enemy.y + enemy.height >= p.y && enemy.y + enemy.height <= p.y + p.height + 1) {
+                    const nextX = enemy.x + (enemy.direction * 5);
+                    if (nextX > p.x && nextX + enemy.width < p.x + p.width) {
+                        onEdge = false;
+                    }
+                }
+            });
+            if (onEdge && enemy.onGround) {
+                enemy.direction *= -1;
+            }
+            enemy.vx = 1.0 * enemy.speedMultiplier * enemy.direction;
+            return;
+        }
+
+        if (enemy.actionState === 'pausing') {
+            enemy.vx *= 0.8;
+            return;
+        }
+        
+        if (currentLevel === 1) {
+            if (Math.abs(distanceX) < 50 && distanceY < 50 && enemy.punchCooldown <= 0) {
+                enemy.isPunching = true;
+                enemy.punchCooldown = 60;
+                enemy.justHit = false;
+            } else {
+                enemy.vx = 1.5 * enemy.speedMultiplier * enemy.direction;
+            }
+        } else if (currentLevel === 2) {
+            if (Math.abs(distanceX) < 50 && distanceY < 50 && enemy.punchCooldown <= 0) {
+                enemy.isPunching = true;
+                enemy.punchCooldown = 60;
+                enemy.justHit = false;
+            } else if (Math.abs(distanceX) > 100 && distanceY < 50 && enemy.shootCooldown <= 0) {
+                shoot(enemy);
+                enemy.shootCooldown = 120 + Math.random() * 60;
+            } else if (!enemy.isPunching) {
+                enemy.vx = 1.5 * enemy.speedMultiplier * enemy.direction;
+            }
+        }
+    }
+
+    function handleCollisions() {
+        if (currentLevel === 2) {
+            bullets = bullets.filter(b => {
+                b.x += b.vx;
+                b.y += b.vy;
+                const targets = b.owner === player ? enemies : [player];
+                for (const target of targets) {
+                    if (target.invulnerable) continue;
+                    if (b.x > target.x && b.x < target.x + target.width && b.y > target.y && b.y < target.y + target.height) {
+                        target.health -= b.damage;
+                        createBloodSplat(b.x, b.y, 8);
+                        return false;
+                    }
+                }
+                return b.x > 0 && b.x < canvas.width;
+            });
+        }
+
+        const allChars = [player, ...enemies];
+        for (const attacker of allChars) {
+            if ((!attacker.isPunching && !attacker.isKicking) || attacker.justHit) continue;
+            let isActive = false;
+            if (attacker.isPunching) {
+                const punchProgress = (30 - attacker.punchCooldown) / 30;
+                if (punchProgress >= 0.3 && punchProgress <= 0.6) isActive = true;
+            } else if (attacker.isKicking) {
+                const kickProgress = (45 - attacker.kickCooldown) / 45;
+                if (kickProgress >= 0.3 && kickProgress <= 0.5) isActive = true;
+            }
+            if (!isActive) continue;
+
+            const isPunch = attacker.isPunching;
+            const damage = (attacker === player && player.isPoweredUp && currentLevel === 1) ? 100 : (isPunch ? PUNCH_DAMAGE : KICK_DAMAGE);
+            const hitboxX = attacker.x + attacker.width / 2 + (isPunch ? 25 : 30) * attacker.direction;
+            const hitboxY = attacker.y + (isPunch ? 20 : 40);
+
+            const targets = attacker === player ? enemies : [player];
+            for (const target of targets) {
+                if (target.invulnerable) continue;
+                if (hitboxX > target.x && hitboxX < target.x + target.width &&
+                    hitboxY > target.y && hitboxY < target.y + target.height) {
+                    target.health -= damage;
+                    target.vx = KNOCKBACK_X * attacker.direction;
+                    target.vy = -KNOCKBACK_Y;
+                    target.onGround = false;
+                    attacker.justHit = true;
+                    createBloodSplat(hitboxX, hitboxY, 15);
+                    break;
+                }
+            }
+        }
+    }
+
+    function updateParticles() {
+        bloodParticles = bloodParticles.filter(p => {
+            p.vy += GRAVITY * 0.5;
+            p.x += p.vx;
+            p.y += p.vy;
+            p.life--;
+            p.radius *= 0.98;
+            return p.life > 0 && p.radius > 0.5;
+        });
+    }
+    
+    function shoot(shooter) {
+        const gunTipX = shooter.x + shooter.width / 2 + (CHARACTER_WIDTH / 2 + 15) * shooter.direction;
+        const gunTipY = shooter.y + 25;
+        
+        if (shooter === player && player.isPoweredUp) {
+            for (let i = 0; i < 4; i++) {
+                setTimeout(() => {
+                    const spread = (Math.random() - 0.5) * 1;
+                    bullets.push({ x: gunTipX, y: gunTipY, vx: 10 * shooter.direction, vy: spread, owner: shooter, damage: POWER_BULLET_DAMAGE, isPowerShot: true });
+                }, i * 50);
+            }
+        } else {
+            bullets.push({ x: gunTipX, y: gunTipY, vx: 10 * shooter.direction, vy: 0, owner: shooter, damage: BULLET_DAMAGE, isPowerShot: false });
+        }
+    }
+
+    function createBloodSplat(x, y, count) {
+        for (let i = 0; i < count; i++) {
+            bloodParticles.push({
+                x, y,
+                vx: (Math.random() - .5) * 6,
+                vy: (Math.random() - .5) * 6 - 2,
+                radius: Math.random() * 3 + 1,
+                life: 60
+            });
+        }
+    }
+    
+    function startNextLevel() {
+        currentLevel++;
+        playerLives = 2;
+        levelTransitioning = true;
+        setTimeout(() => {
+            levelTransitioning = false;
+            startLevel(currentLevel, false)
+        }, 3000);
+    }
+    
+    function startLevel(levelNum, resetLives = true) {
+        currentLevel = levelNum;
+        if (resetLives) playerLives = 2;
+        respawnPlayer();
+        bullets = [];
+        bloodParticles = [];
+        if (levelNum === 1) {
+            setupLevel1();
+            if (document.getElementById('btnShoot')) document.getElementById('btnShoot').style.display = 'none';
+        } else if (levelNum === 2) {
+            setupLevel2();
+            if (document.getElementById('btnShoot')) document.getElementById('btnShoot').style.display = 'flex';
+        }
+        nextPowerUpSpawnTimer = 300;
+    }
+    
+    function checkGameState() {
+        enemies = enemies.filter(e => e.health > 0);
+        if (gameOver) return;
+        
+        if (enemies.length === 0) {
+            if (currentLevel === 1) {
+                startNextLevel();
+            } else if (currentLevel === 2) {
+                gameOver = true;
+                gameOverMessage = 'CONGRATULATIONS! YOU WIN!';
+            }
+        }
+    }
+
+    function updatePowerUps() {
+        if (!powerUp) {
+            nextPowerUpSpawnTimer--;
+            if (nextPowerUpSpawnTimer <= 0) {
+                const location = powerUpSpawnLocations[Math.floor(Math.random() * powerUpSpawnLocations.length)];
+                powerUp = { x: location.x, y: location.y, radius: 10 };
+                nextPowerUpSpawnTimer = 600 + Math.random() * 300;
+            }
+        }
+        if (powerUp) {
+            const dx = player.x + player.width / 2 - powerUp.x;
+            const dy = player.y + player.height / 2 - powerUp.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            if (distance < player.width / 2 + powerUp.radius) {
+                player.isPoweredUp = true;
+                player.powerUpTimer = POWERUP_DURATION;
+                powerUp = null;
+            }
+        }
+    }
+
+    // --- SCREEN RESIZING ---
+    function resizeCanvas() {
+        const aspectRatio = gameWidth / gameHeight;
+        let newWidth = window.innerWidth;
+        let newHeight = window.innerHeight;
+        const windowRatio = newWidth / newHeight;
+
+        if (windowRatio > aspectRatio) {
+            newWidth = newHeight * aspectRatio;
+        } else {
+            newHeight = newWidth / aspectRatio;
+        }
+
+        canvas.style.width = `${newWidth}px`;
+        canvas.style.height = `${newHeight}px`;
+    }
+
+    // --- MAIN GAME LOOP ---
+    function gameLoop() {
+        globalTimer++;
+        if (!gameOver && !levelTransitioning) {
+            handleInput();
+            updateCharacter(player);
+            enemies.forEach(e => { updateEnemyAI(e); updateCharacter(e); });
+            updatePowerUps();
+            handleCollisions();
+            updateParticles();
+            checkGameState();
+        }
+        
+        if (gameOver && (keys['KeyR'] || keys['isRestarting'])) {
+             gameOver = false;
+             keys['isRestarting'] = false; // Reset touch restart flag
+             startLevel(1, true);
+        }
+        
+        drawAll();
+        drawUI();
+        requestAnimationFrame(gameLoop);
+    }
+
+    // --- INITIALIZE AND START ---
+    createPlatforms();
+    startLevel(1, true);
+    setupInput(); // Setup keyboard and touch
+    window.addEventListener('resize', resizeCanvas, false);
+    resizeCanvas(); // Initial resize
+    
+    // Add a listener to the whole screen for restarting on touch devices
+    canvas.addEventListener('click', () => {
+        if (gameOver) {
+            keys['isRestarting'] = true;
+        }
+    });
+
+    gameLoop();
+</script>
+
+</body>
+</html>
