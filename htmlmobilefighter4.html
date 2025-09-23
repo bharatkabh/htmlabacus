@@ -201,6 +201,7 @@
     let freezeVictoryAnimation = false;
     let isTouchDevice = false;
     let scale = 1;
+	let startlevel8=false;
 	
 	
 			// --- ADD THIS ENTIRE BLOCK ---
@@ -384,6 +385,19 @@ const levelInstructions = {
         ctx.scale(scale, scale);
         ctx.fillStyle = '#111'; ctx.fillRect(0, 0, gameWidth, gameHeight);
         ctx.fillStyle = '#FFD700'; ctx.fillRect(0, 580, gameWidth, 20);
+		
+		
+		
+		if(startlevel8){
+		 player = createGod(150, 430, true);
+        boss = createGod(550, 430, false);
+        roundNumber = 1;
+        playerChances = BOSS_BATTLE_CHANCES;
+        battleResultText = '';
+        bossBattleState = 'intro';
+        qteTimer = 90;
+		startlevel8=false;
+        }
 
         function drawGod(character, isShining) { ctx.save();if(isShining){ctx.shadowBlur=20;ctx.shadowColor=isShining==='success'?'cyan':'red'}const scale=3;ctx.strokeStyle=isShining?'white':'black';ctx.lineWidth=3;const x=character.x+character.width/2;const y=character.y;const headRadius=8*scale;const bodyLength=20*scale;const armLength=15*scale;const legLength=20*scale;ctx.beginPath();ctx.arc(x,y+headRadius,headRadius,0,Math.PI*2);ctx.moveTo(x,y+headRadius*2);ctx.lineTo(x,y+headRadius*2+bodyLength);ctx.stroke();const armY=y+headRadius*2+5*scale;const legY=y+headRadius*2+bodyLength;ctx.beginPath();ctx.moveTo(x,armY);ctx.lineTo(x-armLength,armY+10*scale);ctx.moveTo(x,armY);ctx.lineTo(x+armLength,armY+10*scale);ctx.stroke();ctx.beginPath();ctx.moveTo(x,legY);ctx.lineTo(x-legLength/2,legY+legLength);ctx.moveTo(x,legY);ctx.lineTo(x+legLength/2,legY+legLength);ctx.stroke();ctx.restore()}
 
@@ -471,7 +485,7 @@ const levelInstructions = {
         else if (levelNum === 6) setupLevel6();
         else if (levelNum === 7) setupLevel7();
         else if (levelNum === 8) {
-            setupLevel8();
+            //setupLevel8();
             return;		
         }
         nextPowerUpSpawnTimer = 300;
@@ -943,6 +957,7 @@ function gameLoop() {
         if (currentLevel === 8) {
             updateBossBattle();
             updateBossEffects();
+drawBossBattle()
         } else {
             handleInput();
             updateCharacter(player);
@@ -963,11 +978,12 @@ function gameLoop() {
     // --- DRAWING LOGIC ---
     // This runs every frame regardless of the state
     if (currentLevel === 8 && !godModeVictoryActive) {
-        drawBossBattle();
-    } else if (!godModeVictoryActive){
-        drawAll();
-        drawUI();
-    }
+        drawBossBattle();
+    } else {
+	if( currentLevel<8){
+        drawAll();
+        drawUI(); }
+    }
 
     // Restart logic is always checked
     if (gameOver && keys['KeyR']) {
