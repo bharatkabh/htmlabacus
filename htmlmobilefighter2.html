@@ -836,8 +836,14 @@ function gameLoop() {
 
 
     // --- INITIALIZE AND START ---
-    startLevel(1, true);
-    gameLoop();
+   setupInput(); // <-- ADD THIS LINE to activate keyboard and touch controls
+startLevel(1, true);
+
+// Add window resizing to make the game fit the screen
+window.addEventListener('resize', resizeCanvas, false);
+resizeCanvas(); // Call it once to set the initial size
+
+gameLoop();
 </script>
 
 </body>
