@@ -726,6 +726,27 @@ const levelInstructions = {
 		}
 */
 
+// ADD THIS ENTIRE FUNCTION
+function resizeCanvas() {
+    const aspectRatio = gameWidth / gameHeight;
+    let newWidth = window.innerWidth;
+    let newHeight = window.innerHeight;
+    const windowRatio = newWidth / newHeight;
+
+    if (windowRatio > aspectRatio) {
+        // Window is wider than the game, so height is the constraint
+        newWidth = newHeight * aspectRatio;
+    } else {
+        // Window is taller than the game, so width is the constraint
+        newHeight = newWidth / aspectRatio;
+    }
+
+    // Apply the new size to the container, which holds the canvas and controls
+    gameContainer.style.width = `${newWidth}px`;
+    gameContainer.style.height = `${newHeight}px`;
+}
+
+
 
  function handlePowerUpAttack() {
         if (player.isPoweredUp && currentLevel === 3) {
