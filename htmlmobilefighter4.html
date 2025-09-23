@@ -67,7 +67,7 @@
         }
         .action-buttons-grid {
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
+            grid-template-columns: repeat(3, 1fr);
             gap: 10px;
         }
         .god-buttons {
@@ -85,7 +85,7 @@
 
 <div id="gameContainer">
     <div id="instructions"></div>
-
+    <button id="levelSkipButton">Skip Level</button>
     <div class="touch-controls" id="touchControls">
         <div id="normalControls" style="width:100%; display:flex; justify-content:space-between; align-items:flex-end;">
             <div class="d-pad">
@@ -284,6 +284,18 @@ const levelInstructions = {
                 }
             }
             canvas.addEventListener('click', () => { if (gameOver) { keys['KeyR'] = true; setTimeout(() => keys['KeyR'] = false, 100); }});
+			
+			
+            // NEW: Event listener for the skip button
+            levelSkipButton.addEventListener('click', () => {
+                if (!levelTransitioning && !gameOver) {
+                    currentLevel++;
+                    if (currentLevel > 8) {
+                        currentLevel = 1;
+                    }
+                    startLevel(currentLevel, true);
+                }
+            });
         }
     }
 
