@@ -1,0 +1,1147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Stick Master</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Courier New', Courier, monospace;
+        }
+        canvas {
+            background-color: white;
+            display: block;
+        }
+        #gameContainer {
+            position: relative;
+        }
+        #instructions {
+            position: absolute;
+            top: 10px;
+            width: 100%;
+            color: white;
+            text-align: center;
+            font-size: 1.2em;
+            text-shadow: 2px 2px 4px #000;
+            z-index: 10;
+            pointer-events: none;
+        }
+        .touch-controls {
+            position: absolute;
+            bottom: 15px;
+            width: 100%;
+            display: none;
+            justify-content: space-between;
+            align-items: flex-end;
+            z-index: 100;
+            padding: 0 15px;
+            box-sizing: border-box;
+        }
+        .d-pad, .action-buttons, .god-buttons {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .touch-button {
+            width: 55px;
+            height: 55px;
+            background-color: rgba(0, 0, 0, 0.4);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 22px;
+            font-weight: bold;
+            border: 2px solid rgba(255, 255, 255, 0.5);
+            user-select: none;
+        }
+        .action-buttons-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+        }
+        .god-buttons {
+            justify-content: center;
+            width: 100%;
+        }
+        .god-buttons .touch-button {
+            width: 70px;
+            height: 70px;
+            font-size: 16px;
+        }
+    </style>
+</head>
+<body>
+
+<div id="gameContainer">
+    <div id="instructions"></div>
+    <button id="levelSkipButton">Skip Level</button>
+    <div class="touch-controls" id="touchControls">
+        <div id="normalControls" style="width:100%; display:flex; justify-content:space-between; align-items:flex-end;">
+            <div class="d-pad">
+                <div class="touch-button" id="btnLeft">⇦</div>
+                <div class="touch-button" id="btnRight">⇨</div>
+            </div>
+            <div class="action-buttons-grid">
+                <div class="touch-button" id="btnFlip" style="grid-column: 1; grid-row: 1;">↶</div>
+                <div class="touch-button" id="btnKick" style="grid-column: 1; grid-row: 2;">K</div>
+                <div class="touch-button" id="btnPunch" style="grid-column: 2; grid-row: 2;">P</div>
+                <div class="touch-button" id="btnJump" style="grid-column: 2; grid-row: 1;">↑</div>
+				
+                <div class="touch-button" id="btnShoot" style="display: none; background-color: #555; grid-column: 1; grid-row: 2;">SHT</div>
+                <div class="touch-button" id="btnPound" style="display: none; background-color: #555; grid-column: 2; grid-row: 2;">GP</div>
+                <div class="touch-button" id="btnGrapple" style="display: none; background-color: #555; grid-column: 2; grid-row: 2;">GRP</div>
+                <div class="touch-button" id="btnGrenade" style="display: none; background-color: #555; grid-column: 1; grid-row: 2;">GRN</div>
+                <div class="touch-button" id="btnArrow" style="display: none; background-color: #555; grid-column: 2; grid-row: 2;">ARW</div>
+            </div>
+        </div>
+
+        <div id="godModeControls" style="width:100%; display:none;">
+            <div class="god-buttons">
+                <div class="touch-button" id="btnShell">SHELL</div>
+                <div class="touch-button" id="btnRain">RAIN</div>
+                <div class="touch-button" id="btnMongoose">GOOSE</div>
+            </div>
+        </div>
+    </div>
+    
+    <canvas id="gameCanvas"></canvas>
+</div>
+
+
+
+
+<script>
+    // --- SETUP ---
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const gameContainer = document.getElementById('gameContainer');
+    
+    const gameWidth = 800;
+    const gameHeight = 600;
+    canvas.width = gameWidth;
+    canvas.height = gameHeight;
+
+    // --- GAME CONSTANTS ---
+    const GRAVITY = 0.6;
+    const PLAYER_SPEED = 5;
+    const JUMP_STRENGTH = 13;
+    const LION_JUMP_STRENGTH = 15;
+    const CHARACTER_WIDTH = 20;
+    const CHARACTER_HEIGHT = 50;
+    const PUNCH_DAMAGE = 15;
+    const KICK_DAMAGE = 20;
+    const LION_DAMAGE = 20;
+    const BULLET_DAMAGE = 10;
+    const POWER_BULLET_DAMAGE = 25;
+    const GRENADE_DAMAGE = 60;
+    const ARROW_DAMAGE = 40;
+    const KNOCKBACK_X = 8;
+    const KNOCKBACK_Y = 4;
+    const POWERUP_DURATION = 420;
+    const GROUND_POUND_COOLDOWN = 180;
+    const DEATH_SEQUENCE_DURATION = 1080;
+    const TEXT_PHASE_START = 360;
+    const BOSS_BATTLE_ROUNDS = 7;
+    const BOSS_BATTLE_CHANCES = 4;
+    const QTE_TIMER_DURATION = 120;
+
+    // --- GAME STATE ---
+    let player;
+    let enemies = [];
+    let helicopters = [];
+    let lions = [];
+    let platforms = [];
+    let bullets = [];
+    let projectiles = [];
+    let bloodParticles = [];
+    let shockwaves = [];
+    let grapplingRope = null;
+    let keys = {};
+    let gameOver = false;
+    let gameOverMessage = '';
+    let currentLevel = 1;
+    let levelTransitioning = false;
+    let globalTimer = 0;
+    let playerLives = 2;
+    let keySequence = [];
+    let lionsHaveSpawned = false;
+    let lionsSpawnedCount = 0;
+    let bump = null;
+    let ants = [];
+    let isPlayerBeingEaten = false;
+    let deathSequenceTimer = 0;
+    let playerDeathPos = { x: 0, y: 0 };
+    let powerUp = null;
+    let nextPowerUpSpawnTimer = 300;
+    const powerUpSpawnLocations = [ { x: 400, y: 180 }, { x: 175, y: 300 }, { x: 625, y: 300 }, { x: 400, y: 430 }];
+    // Level 8 State
+    let boss;
+    let bossEffects = [];
+    let bossBattleState = 'intro';
+    let currentBossAttack = null;
+    let playerAction = null;
+    let qteTimer = 0;
+    let roundNumber = 1;
+    let playerChances = BOSS_BATTLE_CHANCES;
+    let battleResultText = '';
+	let successfulRounds = 0;
+	let godModeVictoryActive = false;
+    let godModeVictoryTimer = 0;
+    let freezeVictoryAnimation = false;
+    let isTouchDevice = false;
+    let scale = 1;
+	let startlevel8=true;
+	
+	
+			// --- ADD THIS ENTIRE BLOCK ---
+const levelInstructions = {
+    1: "Move, Jump, Punch [P], Kick [K], Flip [↶]",
+    2: "Guns active! Press [SHT] to shoot.",
+    3: "Tougher foes! Your gun has burst-fire.",
+    4: "Enemy upgrades! Power-up grants Ground Pound [GP].",
+    5: "Helicopters! Power-up grants Grapple [GRP].",
+    6: "Lions! Power-up: Grenade [GRN] or Arrow [ARW] on tree.",
+    7: "The path seems clear...",
+    8: "GOD MODE! Counter the attacks!"
+};
+	
+	
+
+    // --- CHARACTER & LEVEL SETUP ---
+    function createCharacter(x, y, isPlayer = false, type = 'normal') {
+        const maxHealth = type === 'tough' || type === 'angled_shooter' ? 150 : 100;
+        return {
+            x, y, vx: 0, vy: 0, width: CHARACTER_WIDTH, height: CHARACTER_HEIGHT, health: maxHealth, maxHealth: maxHealth,
+            onGround: false, direction: 1, shootCooldown: 0, punchCooldown: 0, kickCooldown: 0, flipCooldown: 0,
+            groundPoundCooldown: 0, grenadeCooldown: 0, arrowCooldown: 0,
+            isPunching: false, isKicking: false, isFlipping: false, invulnerable: false, isStunned: false, stunTimer: 0, justHit: false,
+            speedMultiplier: type === 'tough' ? 1.0 + Math.random() * 0.2 : 0.9 + Math.random() * 0.3,
+            actionState: 'chasing', actionTimer: 60 + Math.random() * 60, isPoweredUp: false, powerUpTimer: 0
+        };
+    }
+    function createGod(x, y, isPlayer = false) { return { x, y, width: CHARACTER_WIDTH * 3, height: CHARACTER_HEIGHT * 3, isPlayer }; }
+    function createLion(x, y) { return { x, y, vx: 0, vy: 0, width: 60, height: 30, health: 120, maxHealth: 120, onGround: false, direction: 1, speedMultiplier: 1.5 + Math.random() * 0.5, jumpCooldown: 120, isJumping: false }; }
+    function createHelicopter(x, y) { return { x, y, vx: 1.5, vy: 0, width: 60, height: 30, health: 100, shootCooldown: 120 + Math.random() * 60, baseY: y, isFalling: false, rotation: 0 }; }
+    function respawnPlayer() { player = createCharacter(100, 530, true); }
+    function setupLevel1() { platforms = [{x:0,y:580,width:800,height:20},{x:200,y:450,width:400,height:15},{x:50,y:320,width:250,height:15},{x:500,y:320,width:250,height:15},{x:0,y:200,width:350,height:15},{x:450,y:200,width:350,height:15}]; enemies = [createCharacter(650, 150), createCharacter(150, 280), createCharacter(400, 530)]; }
+    function setupLevel2() { platforms = [{x:0,y:580,width:800,height:20},{x:200,y:450,width:400,height:15},{x:50,y:320,width:250,height:15},{x:500,y:320,width:250,height:15},{x:0,y:200,width:350,height:15},{x:450,y:200,width:350,height:15}]; enemies = [createCharacter(700, 150), createCharacter(100, 150), createCharacter(400, 400)]; }
+    function setupLevel3() { platforms = [{x:0,y:580,width:800,height:20},{x:200,y:450,width:400,height:15},{x:50,y:320,width:250,height:15},{x:500,y:320,width:250,height:15},{x:0,y:200,width:350,height:15},{x:450,y:200,width:350,height:15}]; enemies = [createCharacter(100, 150, false, 'tough'), createCharacter(700, 150, false, 'tough'),createCharacter(200, 300, false, 'tough'), createCharacter(600, 300, false, 'tough'),createCharacter(150, 530, false, 'tough'), createCharacter(650, 530, false, 'tough')]; }
+    function setupLevel4() { platforms = [{ x: 0, y: 580, width: 800, height: 20 },{ x: 0, y: 460, width: 250, height: 15 },{ x: 550, y: 460, width: 250, height: 15 },{ x: 275, y: 340, width: 250, height: 15 }]; enemies = [createCharacter(100, 410, false, 'tough'), createCharacter(700, 410, false, 'tough'),createCharacter(300, 290, false, 'tough'), createCharacter(500, 290, false, 'tough'),createCharacter(200, 530, false, 'tough'), createCharacter(600, 530, false, 'tough')]; }
+    function setupLevel5() { platforms = [{x:0,y:580,width:800,height:20},{x:0,y:470,width:200,height:15},{x:600,y:470,width:200,height:15},{x:300,y:360,width:200,height:15},{x:150,y:250,width:150,height:15},{x:500,y:250,width:150,height:15}]; enemies = [createCharacter(180, 200, false, 'tough'),createCharacter(530, 200, false, 'tough'),createCharacter(350, 310, false, 'tough')]; helicopters = [createHelicopter(100, 80),createHelicopter(600, 120)]; }
+    function setupLevel6() { platforms = [{ x: 0, y: 580, width: 800, height: 20 },{ x: 50, y: 450, width: 150, height: 15 },{ x: 600, y: 450, width: 150, height: 15 },{ x: 350, y: 490, width: 100, height: 15, isTree: true },{ x: 375, y: 400, width: 50, height: 15, isTree: true },{ x: 350, y: 310, width: 100, height: 15, isTree: true }]; enemies = [createCharacter(100, 400, false, 'angled_shooter'),createCharacter(700, 400, false, 'angled_shooter'),createCharacter(250, 530, false, 'angled_shooter')]; }
+    function setupLevel7() { platforms = [{ x: 0, y: 580, width: 800, height: 20 },{ x: 100, y: 450, width: 600, height: 15 },{ x: 250, y: 320, width: 300, height: 15 }]; const bumpPlatform = platforms[Math.floor(Math.random() * platforms.length)]; const bumpX = bumpPlatform.x + 20 + Math.random() * (bumpPlatform.width - 40); bump = { x: bumpX, y: bumpPlatform.y - 10, width: 20, height: 10, triggered: false }; }
+    function setupLevel8() {
+        player = createGod(150, 410, true);
+        boss = createGod(550, 410, false);
+        roundNumber = 1;
+        playerChances = BOSS_BATTLE_CHANCES;
+        battleResultText = '';
+        bossBattleState = 'intro';
+        qteTimer = 90;
+        successfulRounds = 0;
+    }
+    
+    function spawnNextLion() { const spawnPoints=[50,700,400];if(lionsSpawnedCount<3){lions.push(createLion(spawnPoints[lionsSpawnedCount],550));lionsSpawnedCount++;lionsHaveSpawned=true}}
+    
+    // --- EVENT LISTENERS (KEYBOARD & TOUCH) ---
+    function setupInput() {
+        window.addEventListener('keydown', (e) => {
+            if (['Space','KeyW','KeyS','KeyR','KeyG','KeyF','KeyQ','KeyE'].includes(e.code)) { e.preventDefault(); }
+            keys[e.code] = true;
+            keySequence.push(e.key.toLowerCase());
+            if (keySequence.length > 5) { keySequence.shift(); }
+            checkCheatCodes();
+        });
+        window.addEventListener('keyup', (e) => { keys[e.code] = false; });
+
+        isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+        if (isTouchDevice) {
+            document.getElementById('touchControls').style.display = 'flex';
+            document.getElementById('instructions').style.display = 'none';
+
+            const buttonMap = {
+                btnLeft: 'KeyA', btnRight: 'KeyD', btnJump: 'KeyW', btnPunch: 'KeyF', btnKick: 'KeyG',
+                btnFlip: 'ShiftLeft', btnShoot: 'Space', btnPound: 'KeyS', btnGrapple: 'KeyR',
+                btnGrenade: 'KeyG', btnArrow: 'KeyF',
+                btnShell: 'KeyQ', btnRain: 'KeyW', btnMongoose: 'KeyE'
+            };
+
+            for (const [btnId, keyCode] of Object.entries(buttonMap)) {
+                const button = document.getElementById(btnId);
+                if (button) {
+                    button.addEventListener('touchstart', (e) => { e.preventDefault(); keys[keyCode] = true; }, { passive: false });
+                    button.addEventListener('touchend', (e) => { e.preventDefault(); keys[keyCode] = false; }, { passive: false });
+                }
+            }
+            canvas.addEventListener('click', () => { if (gameOver) { keys['KeyR'] = true; setTimeout(() => keys['KeyR'] = false, 100); }});
+			
+			
+            // NEW: Event listener for the skip button
+            levelSkipButton.addEventListener('click', () => {
+                if (!levelTransitioning && !gameOver) {
+                    currentLevel++;
+                    if (currentLevel > 8) {
+                        currentLevel = 1;
+                    }
+                    startLevel(currentLevel, true);
+                }
+            });
+        }
+    }
+	
+	function updateTouchControls() {
+    if (!isTouchDevice) return; // Only run on mobile
+
+    const normalControls = document.getElementById('normalControls');
+    const godModeControls = document.getElementById('godModeControls');
+    console.log("current level"+currentLevel);
+    if (currentLevel === 8) {
+        normalControls.style.display = 'none';
+        godModeControls.style.display = 'flex';
+		
+	
+		
+		 document.getElementById('btnShell').style.display = (currentLevel===8) ? 'flex' : 'none';
+		  document.getElementById('btnRain').style.display = (currentLevel===8) ? 'flex' : 'none';
+		   document.getElementById('btnMongoose').style.display = (currentLevel===8) ? 'flex' : 'none';
+		
+		
+    } else {
+        normalControls.style.display = 'flex';
+        godModeControls.style.display = 'none';
+        
+        let onTree = false;
+        if (currentLevel === 6 && player && player.onGround) {
+            for(const p of platforms) {
+                if(p.isTree && player.y + player.height > p.y - 5 && player.y + player.height < p.y + 5) {
+                    onTree = true;
+                    break;
+                }
+            }
+        }
+        
+        // Base controls that depend on the level
+        document.getElementById('btnShoot').style.display = (currentLevel >= 2 && currentLevel != 6) ? 'flex' : 'none';
+        document.getElementById('btnKick').style.display = (currentLevel < 6) ? 'flex' : 'none';
+		 document.getElementById('btnPunch').style.display = (currentLevel < 6) ? 'flex' : 'none';
+        // Power-up specific controls that appear only when powered up on the correct level
+        document.getElementById('btnPound').style.display = (currentLevel === 4 && player && player.isPoweredUp) ? 'flex' : 'none';
+		 document.getElementById('btnPound').style.display = (currentLevel === 4) ? 'flex' : 'none';
+        document.getElementById('btnGrapple').style.display = (currentLevel === 5) ? 'flex' : 'none';
+        //document.getElementById('btnGrenade').style.display = (currentLevel === 6 && player && player.isPoweredUp) ? 'flex' : 'none';
+        //document.getElementById('btnArrow').style.display = (currentLevel === 6 && player && player.isPoweredUp && onTree) ? 'flex' : 'none';
+		document.getElementById('btnGrenade').style.display = (currentLevel === 6) ? 'flex' : 'none';
+        document.getElementById('btnArrow').style.display = (currentLevel === 6) ? 'flex' : 'none';
+        // Hide normal punch/kick when grenade/arrow are available
+        //document.getElementById('btnKick').style.display = (currentLevel === 6 && player && player.isPoweredUp) ? 'none' : 'flex';
+        //document.getElementById('btnPunch').style.display = (currentLevel === 6 && player && player.isPoweredUp && onTree) ? 'none' : 'flex';
+    }
+}
+
+    // --- DRAWING FUNCTIONS ---
+    function drawStickman(character) { ctx.save();ctx.strokeStyle=character.isPoweredUp?'#00FFFF':'black';ctx.lineWidth=3;const x=character.x+character.width/2;const y=character.y;if(character.isFlipping){const flipProgress=(45-character.flipCooldown)/45;ctx.translate(x,y+character.height/2);ctx.rotate(character.direction*flipProgress*2*Math.PI);ctx.translate(-x,-(y+character.height/2))}if(character.isStunned){ctx.translate(x,y+character.height);ctx.rotate(character.direction*Math.PI/2);ctx.translate(-x,-(y+character.height))}if(character!==player&&character.maxHealth){const healthBarWidth=40;const healthBarHeight=5;const barX=x-healthBarWidth/2;const barY=y-15;ctx.fillStyle='#c54242';ctx.fillRect(barX,barY,healthBarWidth,healthBarHeight);const healthPercentage=character.health/character.maxHealth;ctx.fillStyle='#49c542';ctx.fillRect(barX,barY,healthBarWidth*healthPercentage,healthBarHeight);ctx.strokeStyle='black';ctx.lineWidth=1;ctx.strokeRect(barX,barY,healthBarWidth,healthBarHeight);ctx.lineWidth=3}const headRadius=8;const bodyLength=20;const armLength=15;const legLength=20;ctx.beginPath();ctx.arc(x,y+headRadius,headRadius,0,Math.PI*2);ctx.moveTo(x,y+headRadius*2);ctx.lineTo(x,y+headRadius*2+bodyLength);ctx.stroke();const armY=y+headRadius*2+5;const legY=y+headRadius*2+bodyLength;if(character.isFlipping||character.isStunned){ctx.beginPath();ctx.moveTo(x,armY);ctx.lineTo(x,armY+10);ctx.moveTo(x,legY);ctx.lineTo(x,legY-10);ctx.stroke()}else if(character.isPunching){drawPunchAnimation(character,x,armY)}else if(character.isKicking){drawKickAnimation(character,x,legY)}else if(!character.onGround){const airTimeOffset=Math.sin(globalTimer/10)*2;ctx.beginPath();ctx.moveTo(x,armY);ctx.lineTo(x-5*character.direction,armY+10);ctx.moveTo(x,legY);ctx.lineTo(x+5,legY+10+airTimeOffset);ctx.moveTo(x,legY);ctx.lineTo(x-5,legY+10-airTimeOffset);ctx.stroke()}else if(Math.abs(character.vx)>1){const runCycle=Math.sin(globalTimer/4);ctx.beginPath();ctx.moveTo(x,armY);ctx.lineTo(x+(armLength-5)*character.direction*-runCycle,armY+10);ctx.moveTo(x,legY);ctx.lineTo(x+legLength*runCycle,legY+legLength);ctx.moveTo(x,legY);ctx.lineTo(x-legLength*runCycle,legY+legLength);ctx.stroke()}else{const breath=Math.sin(globalTimer/20)*1.5;ctx.beginPath();ctx.moveTo(x,armY);ctx.lineTo(x,armY+breath+10);ctx.moveTo(x,legY);ctx.lineTo(x-8,legY+legLength);ctx.moveTo(x,legY);ctx.lineTo(x+8,legY+legLength);ctx.stroke()}ctx.restore()}
+    function drawPunchAnimation(character, x, armY) { const punchProgress = (30 - character.punchCooldown) / 30; let armExtension = 0; if (punchProgress < 0.3) armExtension = -10 * (punchProgress / 0.3); else if (punchProgress < 0.6) armExtension = -10 + 35 * ((punchProgress - 0.3) / 0.3); else armExtension = 25 - 25 * ((punchProgress - 0.6) / 0.4); ctx.beginPath(); ctx.moveTo(x, armY); ctx.lineTo(x + armExtension * character.direction, armY + 5); ctx.stroke(); }
+    function drawKickAnimation(character, x, legY) { const kickProgress = (45 - character.kickCooldown) / 45; let legExtension = 0; let legAngle = 0; if (kickProgress < 0.3) legAngle = -15 * (kickProgress / 0.3); else if (kickProgress < 0.5) { legExtension = 25 * ((kickProgress - 0.3) / 0.2); legAngle = -15 + 15 * ((kickProgress - 0.3) / 0.2); } else legExtension = 25 - 25 * ((kickProgress - 0.5) / 0.5); ctx.beginPath(); ctx.moveTo(x, legY); ctx.lineTo(x + legExtension * character.direction, legY + legAngle); ctx.stroke(); }
+    function drawHelicopter(heli) { ctx.save();const x=heli.x+heli.width/2;const y=heli.y+heli.height/2;ctx.translate(x,y);ctx.rotate(heli.rotation);ctx.fillStyle='black';ctx.beginPath();ctx.ellipse(0,0,heli.width/2,heli.height/2,0,0,Math.PI*2);ctx.fill();ctx.fillRect(heli.width/2,-5,15,10);const rotorLength=(heli.width/2+10)*Math.abs(Math.sin(globalTimer*2));ctx.lineWidth=2;ctx.strokeStyle='black';ctx.beginPath();ctx.moveTo(-rotorLength,-heli.height/2);ctx.lineTo(rotorLength,-heli.height/2);ctx.stroke();ctx.restore()}
+    function drawLion(lion) { ctx.save();ctx.fillStyle='black';ctx.strokeStyle='black';ctx.lineWidth=2;const x=lion.x+lion.width/2;const y=lion.y+lion.height/2;ctx.beginPath();ctx.ellipse(x,y,lion.width/2,lion.height/2,0,0,Math.PI*2);ctx.fill();const headX=x+lion.direction*(lion.width/2-5);ctx.beginPath();ctx.arc(headX,y,lion.height/2,0,Math.PI*2);ctx.fill();if(lion.onGround){const runCycle=Math.sin(globalTimer/3);const legLength=15;const legY=y+lion.height/2;ctx.beginPath();ctx.moveTo(x+lion.width*0.3*lion.direction,legY);ctx.lineTo(x+lion.width*0.3*lion.direction+8*runCycle,legY+legLength);ctx.moveTo(x-lion.width*0.3*lion.direction,legY);ctx.lineTo(x-lion.width*0.3*lion.direction-8*runCycle,legY+legLength);ctx.stroke()}else{const legY=y+lion.height/2;ctx.beginPath();ctx.moveTo(x+lion.width*0.3*lion.direction,legY);ctx.lineTo(x+lion.width*0.2*lion.direction,legY+5);ctx.moveTo(x-lion.width*0.3*lion.direction,legY);ctx.lineTo(x-lion.width*0.2*lion.direction,legY+5);ctx.stroke()}ctx.restore()}
+    function drawTree() { platforms.forEach(p=>{if(p.isTree){ctx.fillStyle='#654321';ctx.fillRect(p.x,p.y,p.width,580-p.y);ctx.fillStyle='#228B22';ctx.beginPath();ctx.arc(p.x+p.width/2,p.y,p.width/1.5,0,Math.PI*2);ctx.fill()}})}
+    function drawProjectile(p) { if(p.type==='grenade'){ctx.fillStyle='black';ctx.beginPath();ctx.arc(p.x,p.y,5,0,Math.PI*2);ctx.fill()}else if(p.type==='arrow'){ctx.strokeStyle='saddlebrown';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(p.x-p.vx*0.5,p.y-p.vy*0.5);ctx.stroke()}}
+    function drawGrapplingRope() { if(!grapplingRope)return;ctx.strokeStyle='#555';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(grapplingRope.startX,grapplingRope.startY);ctx.lineTo(grapplingRope.endX,grapplingRope.endY);ctx.stroke()}
+    function drawUI() { ctx.font='16px "Courier New"';ctx.textAlign='left';ctx.fillStyle='red';ctx.fillRect(10,10,150,15);ctx.fillStyle='green';ctx.fillRect(10,10,150*(player.health/100),15);ctx.strokeStyle='black';ctx.strokeRect(10,10,150,15);ctx.fillStyle='black';ctx.fillText('PLAYER',15,22);ctx.fillText(`LIVES: ${playerLives}`,15,45);ctx.textAlign='center';ctx.fillText(`LEVEL: ${currentLevel}`,canvas.width/2,25);ctx.textAlign='right';if(currentLevel!==7)ctx.fillText(`ENEMIES REMAINING: ${enemies.length+helicopters.length+lions.length}`,canvas.width-10,25);if(player.isPoweredUp){const barWidth=150;const powerPercentage=player.powerUpTimer/POWERUP_DURATION;ctx.textAlign='center';ctx.fillStyle='black';ctx.fillText('POWER',canvas.width/2,50);ctx.fillStyle='#888';ctx.fillRect(canvas.width/2-barWidth/2,55,barWidth,10);ctx.fillStyle='#00FFFF';ctx.fillRect(canvas.width/2-barWidth/2,55,barWidth*powerPercentage,10);ctx.strokeStyle='black';ctx.strokeRect(canvas.width/2-barWidth/2,55,barWidth,10);if(currentLevel===4&&player.groundPoundCooldown>0){const cdBarWidth=100;const cdPercentage=player.groundPoundCooldown/GROUND_POUND_COOLDOWN;ctx.fillStyle='#888';ctx.fillRect(canvas.width/2-cdBarWidth/2,70,cdBarWidth,8);ctx.fillStyle='#ff9900';ctx.fillRect(canvas.width/2-cdBarWidth/2,70,cdBarWidth*cdPercentage,8);ctx.strokeStyle='black';ctx.strokeRect(canvas.width/2-cdBarWidth/2,70,cdBarWidth,8)}}
+        if (gameOver || levelTransitioning || (isPlayerBeingEaten && deathSequenceTimer <= TEXT_PHASE_START)) {
+            if (isPlayerBeingEaten) { ctx.fillStyle = 'rgba(139,0,0,0.7)'; }
+            else { ctx.fillStyle = 'rgba(0,0,0,0.7)'; }
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = 'white'; ctx.textAlign = 'center';
+            if (gameOver) { ctx.font = '60px "Courier New"'; ctx.fillText('GAME OVER', canvas.width / 2, canvas.height / 2 - 20); ctx.font = '30px "Courier New"'; ctx.fillText(gameOverMessage, canvas.width / 2, canvas.height / 2 + 20); ctx.font = '20px "Courier New"'; ctx.fillText('Tap or Press R to Restart', canvas.width / 2, canvas.height / 2 + 60); }
+            else if (levelTransitioning) { ctx.font = '40px "Courier New"'; ctx.fillText(`LEVEL ${currentLevel - 1} COMPLETE!`, canvas.width / 2, canvas.height / 2); ctx.font = '25px "Courier New"'; ctx.fillText(`Get ready for Level ${currentLevel}...`, canvas.width / 2, canvas.height / 2 + 40); }
+            else if (isPlayerBeingEaten) {
+                ctx.font = '30px "Courier New"';
+                if (deathSequenceTimer > TEXT_PHASE_START * (2 / 3)) ctx.fillText("A sudden betrayal...", canvas.width / 2, canvas.height / 2 - 40);
+                else if (deathSequenceTimer > TEXT_PHASE_START * (1 / 3)) ctx.fillText("The hero falls...", canvas.width / 2, canvas.height / 2);
+                else ctx.fillText("...but the soul ascends to GOD MODE.", canvas.width / 2, canvas.height / 2 + 40);
+            }
+        }
+    }
+    function drawAll() {
+        ctx.save();
+        ctx.scale(scale, scale);
+        ctx.clearRect(0,0,gameWidth,gameHeight);
+        if(!isPlayerBeingEaten){platforms.forEach(p=>{ctx.fillStyle='black';ctx.fillRect(p.x,p.y,p.width,p.height)})}
+        if(currentLevel===6)drawTree();
+        if(powerUp&&!isPlayerBeingEaten){const pulse=Math.sin(globalTimer/10)*2;ctx.fillStyle='#00FFFF';ctx.strokeStyle='white';ctx.lineWidth=3;ctx.beginPath();ctx.arc(powerUp.x,powerUp.y,8+pulse,0,Math.PI*2);ctx.fill();ctx.stroke()}
+        shockwaves.forEach(s=>{ctx.strokeStyle=`rgba(0,0,0,${s.opacity})`;ctx.lineWidth=3;ctx.beginPath();ctx.arc(s.x,s.y,s.radius,0,Math.PI*2);ctx.stroke()});
+        
+        if (!isPlayerBeingEaten) { drawStickman(player); }
+        else if (deathSequenceTimer < DEATH_SEQUENCE_DURATION - 240) {
+            const x = playerDeathPos.x; const y = playerDeathPos.y;
+            ctx.strokeStyle = 'white'; ctx.lineWidth = 4;
+            ctx.beginPath(); ctx.arc(x + 10, y + 35, 6, 0, Math.PI * 2); ctx.stroke();
+            ctx.moveTo(x + 10, y + 41); ctx.lineTo(x + 10, y + 55); ctx.stroke();
+            ctx.moveTo(x + 5, y + 45); ctx.lineTo(x + 15, y + 45); ctx.stroke();
+            ctx.strokeStyle = '#8B4513'; ctx.lineWidth = 1; ctx.stroke();
+        }
+        
+        enemies.forEach(drawStickman);helicopters.forEach(drawHelicopter);lions.forEach(drawLion);projectiles.forEach(drawProjectile);drawGrapplingRope();
+        ants.forEach(ant=>{ctx.fillStyle='black';ctx.fillRect(ant.x,ant.y,3,3)});
+        bullets.forEach(b=>{ctx.fillStyle=b.isPowerShot?'#00FFFF':'black';ctx.fillRect(b.x-2,b.y-2,b.isPowerShot?6:4,b.isPowerShot?6:4)});
+        bloodParticles.forEach(p=>{ctx.fillStyle='red';ctx.beginPath();ctx.arc(p.x,p.y,p.radius,0,Math.PI*2);ctx.fill()});
+        if(bump&&!bump.triggered){ctx.fillStyle='#4a2a0a';ctx.beginPath();ctx.arc(bump.x+bump.width/2,bump.y+bump.height/2,bump.width/2,0,Math.PI);ctx.fill()}
+        ctx.restore();
+    }
+    
+	/*
+	function drawGodVictory() {
+        ctx.save();
+        ctx.scale(scale, scale);
+        ctx.clearRect(0, 0, gameWidth, gameHeight);
+        ctx.fillStyle = '#111'; ctx.fillRect(0, 0, gameWidth, gameHeight);
+        ctx.fillStyle = '#FFD700'; ctx.fillRect(0, 580, gameWidth, 20);
+
+        ctx.save();
+        ctx.strokeStyle = 'white'; ctx.lineWidth = 3; const scaleFactor = 3;
+        const x = player.x + player.width / 2; const y = player.y;
+        const headRadius = 8 * scaleFactor; const bodyLength = 20 * scaleFactor;
+        ctx.beginPath(); ctx.arc(x, y + headRadius, headRadius, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x, y + headRadius * 2); ctx.lineTo(x, y + headRadius * 2 + bodyLength); ctx.stroke();
+        const armY = y + headRadius * 2 + bodyLength * 0.7;
+        ctx.beginPath(); ctx.moveTo(x, armY); ctx.lineTo(x - 10 * scaleFactor, armY + 5 * scaleFactor); ctx.moveTo(x, armY); ctx.lineTo(x + 10 * scaleFactor, armY + 5 * scaleFactor); ctx.stroke();
+        const legY = y + headRadius * 2 + bodyLength;
+        ctx.beginPath(); ctx.arc(x, legY + 15 * scaleFactor, 20 * scaleFactor, Math.PI * 0.1, Math.PI * 0.9); ctx.stroke();
+        ctx.restore();
+
+        let pulse = 1.0;
+		if (!freezeVictoryAnimation) { pulse = Math.sin(godModeVictoryTimer / 10) * 0.1 + 0.9; }
+        const gradient = ctx.createRadialGradient(x, y + player.height / 2, 0, x, y + player.height / 2, 100 * pulse);
+        gradient.addColorStop(0, `rgba(0, 255, 255, ${0.4 * pulse})`);
+        gradient.addColorStop(1, `rgba(0, 255, 255, 0)`);
+        ctx.fillStyle = gradient;
+        ctx.beginPath(); ctx.arc(x, y + player.height / 2, 100 * pulse, 0, Math.PI * 2); ctx.fill();
+        ctx.font='80px "Courier New"'; ctx.fillStyle='rgba(255,255,255,0.2)'; ctx.textAlign='center'; ctx.fillText('Peace', gameWidth/2, gameHeight/2);
+        ctx.restore();
+    }
+    function drawBossBattle() {
+        ctx.save();
+        ctx.scale(scale, scale);
+        ctx.fillStyle = '#111'; ctx.fillRect(0, 0, gameWidth, gameHeight);
+        ctx.fillStyle = '#FFD700'; ctx.fillRect(0, 580, gameWidth, 20);
+		
+		if (startlevel8){
+		 player = createGod(150, 430, true);
+        boss = createGod(550, 430, false);
+        roundNumber = 1;
+        playerChances = BOSS_BATTLE_CHANCES;
+        battleResultText = '';
+        bossBattleState = 'intro';
+        qteTimer = 90;
+		startlevel8=false;
+        }
+
+        function drawGod(character, isShining) { ctx.save();if(isShining){ctx.shadowBlur=20;ctx.shadowColor=isShining==='success'?'cyan':'red'}const scale=3;ctx.strokeStyle=isShining?'white':'black';ctx.lineWidth=3;const x=character.x+character.width/2;const y=character.y;const headRadius=8*scale;const bodyLength=20*scale;const armLength=15*scale;const legLength=20*scale;ctx.beginPath();ctx.arc(x,y+headRadius,headRadius,0,Math.PI*2);ctx.moveTo(x,y+headRadius*2);ctx.lineTo(x,y+headRadius*2+bodyLength);ctx.stroke();const armY=y+headRadius*2+5*scale;const legY=y+headRadius*2+bodyLength;ctx.beginPath();ctx.moveTo(x,armY);ctx.lineTo(x-armLength,armY+10*scale);ctx.moveTo(x,armY);ctx.lineTo(x+armLength,armY+10*scale);ctx.stroke();ctx.beginPath();ctx.moveTo(x,legY);ctx.lineTo(x-legLength/2,legY+legLength);ctx.moveTo(x,legY);ctx.lineTo(x+legLength/2,legY+legLength);ctx.stroke();ctx.restore()}
+
+        drawGod(player, bossBattleState === 'result' ? (playerAction !== 'fail' ? 'success' : 'fail') : null);
+        drawGod(boss, bossBattleState === 'attacking' || (bossBattleState === 'result' && playerAction === 'fail'));
+
+        bossEffects.forEach(effect => {
+            if(effect.type.includes('rain_particle')) {
+                if(effect.splashed) { ctx.strokeStyle=effect.type.includes('player')?`rgba(0,255,255,${effect.life/10})`:`rgba(0,0,255,${effect.life/10})`;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(effect.x-5,effect.y);ctx.lineTo(effect.x-10,effect.y-5);ctx.moveTo(effect.x+5,effect.y);ctx.lineTo(effect.x+10,effect.y-5);ctx.stroke() }
+                else { ctx.strokeStyle=effect.type.includes('player')?'#00FFFF':'#0000FF';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(effect.x,effect.y);ctx.lineTo(effect.x,effect.y-20);ctx.stroke() }
+            } else if (effect.type === 'fire_arrow') {
+                const angle = Math.atan2(effect.vy, effect.vx); ctx.save(); ctx.translate(effect.x, effect.y); ctx.rotate(angle);
+                ctx.fillStyle = 'orange'; ctx.beginPath(); ctx.ellipse(0, 0, 15, 5, 0, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = 'red'; ctx.beginPath(); ctx.ellipse(5, 0, 10, 4, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+            } else if (effect.type === 'thunder_flash') {
+                ctx.fillStyle = `rgba(255, 255, 255, ${effect.opacity})`; ctx.fillRect(0,0,gameWidth, gameHeight);
+            } else if (effect.type === 'thunder_bolt') {
+                ctx.strokeStyle='white';ctx.lineWidth=5;ctx.shadowBlur=20;ctx.shadowColor='yellow';ctx.beginPath();ctx.moveTo(effect.points[0].x,effect.points[0].y);for(let i=1;i<effect.points.length;i++){ctx.lineTo(effect.points[i].x,effect.points[i].y)}ctx.stroke();ctx.shadowBlur=0;
+            } else if (effect.type === 'snake_arrow') {
+                ctx.strokeStyle='green';ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(effect.x,effect.y);ctx.lineTo(effect.x-effect.vx,effect.y-effect.vy);ctx.stroke();ctx.fillStyle='red';ctx.beginPath();ctx.arc(effect.x,effect.y,3,0,Math.PI*2);ctx.fill();
+            } else if (effect.type === 'shell') {
+                effect.radius+=10;ctx.strokeStyle=`rgba(0,255,255,${effect.life/60})`;ctx.lineWidth=8;ctx.beginPath();ctx.arc(player.x+player.width/2,player.y+player.height/2,effect.radius,0,Math.PI*2);ctx.stroke();
+            } else if (effect.type === 'mongoose') {
+                ctx.fillStyle=`rgba(150,150,150,${effect.opacity})`;ctx.beginPath();ctx.ellipse(effect.x,effect.y-20,30,15,0,0,Math.PI*2);ctx.fill();
+            }
+        });
+
+        ctx.font='24px "Courier New"';ctx.fillStyle='white';ctx.textAlign='center';
+        ctx.fillText(`Round: ${roundNumber} / ${BOSS_BATTLE_ROUNDS}`,gameWidth/2,50);
+        ctx.fillText(`Chances: ${playerChances}`,gameWidth/2,80);
+
+        if(bossBattleState==='attacking'){const barWidth=QTE_TIMER_DURATION*3;const timerWidth=qteTimer*3;ctx.fillStyle='red';ctx.fillRect(gameWidth/2-barWidth/2,100,barWidth,10);ctx.fillStyle='green';ctx.fillRect(gameWidth/2-barWidth/2,100,timerWidth,10);ctx.font='20px "Courier New"';ctx.fillStyle='white';if(currentBossAttack==='rain'||currentBossAttack==='thunder')ctx.fillText("Counter: SHELL [Q]",gameWidth/2,130);if(currentBossAttack==='fire')ctx.fillText("Counter: RAIN [W]",gameWidth/2,130);if(currentBossAttack==='snakes')ctx.fillText("Counter: MONGOOSE [E]",gameWidth/2,130)}
+        else if(bossBattleState==='result'){ctx.font='60px "Courier New"';ctx.fillStyle=playerAction==='fail'?'red':'cyan';ctx.fillText(battleResultText,gameWidth/2,gameHeight/2)}
+        else if(bossBattleState==='intro'){ctx.font='40px "Courier New"';ctx.fillText("FINAL BATTLE!",gameWidth/2,gameHeight/2)}
+        else if(bossBattleState==='round_announce'){ctx.font='50px "Courier New"';ctx.fillText(`Round ${roundNumber}`,gameWidth/2,gameHeight/2);if(qteTimer < 45) {ctx.font='30px "Courier New"';ctx.fillText("FIGHT!",gameWidth/2,gameHeight/2+50)}}
+        ctx.restore();
+    }
+     */
+    // --- HELPER FUNCTIONS ---
+    function findClosestEnemy(from) { let closest=null;let closestDist=Infinity;enemies.forEach(enemy=>{const dist=Math.hypot(enemy.x-from.x,enemy.y-from.y);if(dist<closestDist){closestDist=dist;closest=enemy}});return closest}
+
+    // --- UPDATE & LOGIC FUNCTIONS ---
+    function handleInput() { let onTree=false;if(currentLevel===6&&player.onGround){for(const p of platforms){if(p.isTree&&player.y+player.height>p.y-5&&player.y+player.height<p.y+5){onTree=true;break}}}const canMove=!player.isPunching&&!player.isKicking&&!player.isFlipping&&!player.isStunned;if(canMove){player.vx=keys['KeyA']?-PLAYER_SPEED:keys['KeyD']?PLAYER_SPEED:player.vx*0.8;if(keys['KeyD'])player.direction=1;if(keys['KeyA'])player.direction=-1;if(keys['KeyW']&&player.onGround){player.vy=-JUMP_STRENGTH;player.onGround=false}}else if(!player.isFlipping){player.vx*=0.8}const canAct=!player.isPunching&&!player.isKicking&&!player.isFlipping;if(canAct){if(player.isPoweredUp&&currentLevel===6){if(onTree&&keys['KeyF']&&player.arrowCooldown<=0){projectiles.push({type:'arrow',x:player.x+player.width/2,y:player.y,vx:0,vy:0,speed:10,target:lions.length>0?lions[0]:null});player.arrowCooldown=30}if(keys['KeyG']&&player.grenadeCooldown<=0){const target=findClosestEnemy(player);if(target){const timeToTarget=60;const pX=player.x+player.width/2;const pY=player.y;const tX=target.x+target.width/2;const tY=target.y+target.height/2;const dX=tX-pX;const dY=tY-pY;const gravityEffect=GRAVITY*0.4;const initialVx=dX/timeToTarget;const initialVy=(dY-0.5*gravityEffect*timeToTarget*timeToTarget)/timeToTarget;projectiles.push({type:'grenade',x:pX,y:pY,vx:initialVx,vy:initialVy,fuse:120});player.grenadeCooldown=90}}}else{if(keys['KeyF']&&player.punchCooldown<=0){player.isPunching=true;player.punchCooldown=30;player.justHit=false}if(keys['KeyG']&&player.kickCooldown<=0){player.isKicking=true;player.kickCooldown=45;player.justHit=false}}if(keys['ShiftLeft']&&player.flipCooldown<=0){player.isFlipping=true;player.invulnerable=true;player.flipCooldown=45;player.vy=-8;player.vx=-6*player.direction;player.onGround=false}if(currentLevel>=2&&keys['Space']&&player.shootCooldown<=0){shoot(player);player.shootCooldown=player.isPoweredUp&&currentLevel!==3?15:25}if(currentLevel===4&&keys['KeyS']&&player.isPoweredUp&&player.onGround&&player.groundPoundCooldown<=0){executeGroundPound();player.groundPoundCooldown=GROUND_POUND_COOLDOWN}if(currentLevel===5&&keys['KeyR']&&player.isPoweredUp&&!grapplingRope){grapplingRope={startX:player.x+player.width/2,startY:player.y,endX:player.x+player.width/2,endY:player.y,speed:20,state:'extending',hitTarget:null}}}}
+    function updateCharacter(character) { if(character.shootCooldown>0)character.shootCooldown--;if(character.punchCooldown>0)character.punchCooldown--;else character.isPunching=false;if(character.kickCooldown>0)character.kickCooldown--;else character.isKicking=false;if(character.flipCooldown>0)character.flipCooldown--;else{character.isFlipping=false;character.invulnerable=false}if(character.groundPoundCooldown>0)character.groundPoundCooldown--;if(character.grenadeCooldown>0)character.grenadeCooldown--;if(character.arrowCooldown>0)character.arrowCooldown--;if(character.stunTimer>0){character.stunTimer--;character.vx*=0.9}else{character.isStunned=false}if(character.isPoweredUp){character.powerUpTimer--;if(character.powerUpTimer<=0){character.isPoweredUp=false}}if(!character.isFlipping&&!character.isStunned)character.vy+=GRAVITY;else if(character.isFlipping)character.vy+=GRAVITY*0.6;if(!character.isStunned)character.x+=character.vx;character.y+=character.vy;character.onGround=false;if(character.vy>=0){platforms.forEach(p=>{if(p.isTree&&character!==player)return;if(character.x<p.x+p.width&&character.x+character.width>p.x&&character.y+character.height>=p.y&&character.y+character.height<=p.y+p.height+5){character.y=p.y-character.height;character.vy=0;character.onGround=true}})}if(character.x<0)character.x=0;if(character.x+character.width>canvas.width)character.x=canvas.width-character.width;if(character.health<=0&&character===player){playerLives--;if(playerLives>0){if(currentLevel===6&&!lionsHaveSpawned)spawnNextLion();respawnPlayer()}else{gameOver=true;gameOverMessage='YOU WERE DEFEATED'}}if(character.y>canvas.height){if(character===player){playerLives--;if(playerLives>0){if(currentLevel===6&&!lionsHaveSpawned)spawnNextLion();respawnPlayer()}else{gameOver=true;gameOverMessage='YOU FELL!'}}else{character.health=0}}}
+    function updateEnemyAI(enemy) { if(enemy.isStunned)return;const distanceX=player.x-enemy.x;const distanceY=Math.abs(player.y-enemy.y);enemy.direction=Math.sign(distanceX);enemy.actionTimer--;if(distanceY>100){enemy.actionState='patrolling'}else if(enemy.actionState==='patrolling'){enemy.actionState='chasing'}if(enemy.actionTimer<=0){const choice=Math.random();if(choice>0.7&&distanceY<=100){enemy.actionState='pausing';enemy.actionTimer=30+Math.random()*60}else{enemy.actionState='chasing';enemy.actionTimer=60+Math.random()*120}}if(enemy.actionState==='patrolling'){let onEdge=true;platforms.forEach(p=>{if(p.isTree)return;if(enemy.y+enemy.height>=p.y&&enemy.y+enemy.height<=p.y+p.height+5){const nextX=enemy.x+(enemy.direction*5);if(nextX>p.x&&nextX+enemy.width<p.x+p.width){onEdge=false}}});if(onEdge&&enemy.onGround){enemy.direction*=-1}enemy.vx=1*enemy.speedMultiplier*enemy.direction;return}if(enemy.actionState==='pausing'){enemy.vx*=0.8;return}if(currentLevel===1){if(Math.abs(distanceX)<50&&distanceY<50&&enemy.punchCooldown<=0){enemy.isPunching=true;enemy.punchCooldown=60;enemy.justHit=false}else{enemy.vx=1.5*enemy.speedMultiplier*enemy.direction}}else if(currentLevel>=2){if(Math.abs(distanceX)<50&&distanceY<50&&enemy.punchCooldown<=0){enemy.isPunching=true;enemy.punchCooldown=60;enemy.justHit=false}else if(Math.abs(distanceX)>100&&distanceY<50&&enemy.shootCooldown<=0){const angle=(currentLevel===6)?Math.atan2(player.y+player.height/2-(enemy.y+enemy.height/2),player.x+player.width/2-(enemy.x+enemy.width/2)):null;shoot(enemy,angle);enemy.shootCooldown=120+Math.random()*60}else if(!enemy.isPunching){enemy.vx=1.5*enemy.speedMultiplier*enemy.direction}}}
+    function updateLions() { const lionsBefore=lions.length;lions.forEach(lion=>{lion.vy+=GRAVITY;lion.x+=lion.vx;lion.y+=lion.vy;lion.onGround=false;if(lion.jumpCooldown>0)lion.jumpCooldown--;platforms.forEach(p=>{if(p.isTree)return;if(lion.x<p.x+p.width&&lion.x+lion.width>p.x&&lion.y+lion.height>=p.y&&lion.y+lion.height<=p.y+p.height+5){lion.y=p.y-lion.height;lion.vy=0;lion.onGround=true;lion.isJumping=false}});const distanceX=player.x-lion.x;lion.direction=Math.sign(distanceX);if(!lion.isJumping)lion.vx=2*lion.speedMultiplier*lion.direction;if(lion.onGround&&lion.jumpCooldown<=0&&player.y<lion.y-50&&Math.abs(distanceX)<200){lion.vy=-LION_JUMP_STRENGTH;lion.isJumping=true;lion.jumpCooldown=180}});lions=lions.filter(l=>l.health>0);if(lionsBefore>0&&lions.length<lionsBefore&&lions.length===0&&lionsHaveSpawned){spawnNextLion()}}
+    function updateHelicopters() { helicopters.forEach(heli=>{if(heli.isFalling){heli.vy+=GRAVITY*0.5;heli.y+=heli.vy;heli.rotation+=0.1*(heli.vx>0?1:-1);if(heli.y+heli.height>=580){createBloodSplat(heli.x+heli.width/2,heli.y+heli.height/2,50);heli.health=0}return}heli.x+=heli.vx;if(heli.x<=0||heli.x+heli.width>=canvas.width){heli.vx*=-1}heli.y=heli.baseY+Math.sin(globalTimer/50+heli.x/100)*10;heli.shootCooldown--;if(heli.shootCooldown<=0){bullets.push({x:heli.x+heli.width/2,y:heli.y+heli.height,vx:0,vy:5,owner:null,damage:BULLET_DAMAGE,isPowerShot:false});heli.shootCooldown=100+Math.random()*50}});helicopters=helicopters.filter(h=>h.health>0)}
+    function updateGrapplingRope() { if(!grapplingRope)return;grapplingRope.startX=player.x+player.width/2;grapplingRope.startY=player.y;if(grapplingRope.state==='extending'){grapplingRope.endY-=grapplingRope.speed;for(const heli of helicopters){if(!heli.isFalling&&grapplingRope.endX>heli.x&&grapplingRope.endX<heli.x+heli.width&&grapplingRope.endY<heli.y+heli.height&&grapplingRope.endY>heli.y){grapplingRope.state='hit';grapplingRope.hitTarget=heli;heli.isFalling=true;break}}if(grapplingRope.endY<0){grapplingRope.state='retracting'}}else if(grapplingRope.state==='hit'){if(grapplingRope.hitTarget.health<=0){grapplingRope=null}else{grapplingRope.endX=grapplingRope.hitTarget.x+grapplingRope.hitTarget.width/2;grapplingRope.endY=grapplingRope.hitTarget.y+grapplingRope.hitTarget.height/2}}else if(grapplingRope.state==='retracting'){grapplingRope.endY+=grapplingRope.speed;if(grapplingRope.endY>=grapplingRope.startY){grapplingRope=null}}}
+    function updateProjectiles() { projectiles=projectiles.filter(p=>{if(p.type==='grenade'){p.vy+=GRAVITY*0.4;p.vx*=0.99;p.x+=p.vx;p.y+=p.vy;p.fuse--;if(p.fuse<=0||p.y>580){shockwaves.push({x:p.x,y:p.y,radius:10,maxRadius:80,opacity:1});[...enemies,...lions].forEach(e=>{const dist=Math.hypot(e.x+e.width/2-p.x,e.y+e.height/2-p.y);if(dist<80)e.health-=GRENADE_DAMAGE});return false}}else if(p.type==='arrow'){let targetLion=lions.length>0?lions[0]:null;if(targetLion&&targetLion.health>0){const angle=Math.atan2((targetLion.y+targetLion.height/2)-p.y,(targetLion.x+targetLion.width/2)-p.x);p.vx=Math.cos(angle)*p.speed;p.vy=Math.sin(angle)*p.speed}else{p.vx=0;p.vy=-p.speed}p.x+=p.vx;p.y+=p.vy}return p.y>-20&&p.y<canvas.height+20&&p.x>-20&&p.x<canvas.width+20})}
+    function handleCollisions() {
+        if(currentLevel>=2){bullets=bullets.filter(b=>{b.x+=b.vx;b.y+=b.vy;let targets=[];if(b.owner===player||b.owner===null){targets.push(...enemies)}else{targets.push(player)}if(b.owner===null){targets.push(player)}const allTargets=[...targets,...helicopters.filter(h=>!h.isFalling)];for(const target of allTargets){if(target.invulnerable)continue;if(b.x>target.x&&b.x<target.x+(target.width||0)&&b.y>target.y&&b.y<target.y+(target.height||0)){target.health-=b.damage;createBloodSplat(b.x,b.y,8);return false}}return b.x>-10&&b.x<canvas.width+10&&b.y>-10&&b.y<canvas.height+10})}
+		
+        projectiles.forEach(p => { if(p.type === 'arrow') { for(const lion of lions) { if (p.x > lion.x && p.x < lion.x + lion.width && p.y > lion.y && p.y < lion.y + lion.height) { lion.health -= ARROW_DAMAGE; p.fuse = 0; createBloodSplat(p.x, p.y, 10); break; } } }});
+		
+        projectiles = projectiles.filter(p => p.fuse !== 0);
+		
+        lions.forEach(lion => { if(!player.invulnerable && player.x < lion.x + lion.width && player.x + player.width > lion.x && player.y < lion.y + lion.height && player.y + player.height > lion.y) { player.health -= LION_DAMAGE; player.vx = lion.direction * KNOCKBACK_X * 2; player.vy = -KNOCKBACK_Y; }});
+		/*
+		
+        const allChars=[player,...enemies];for(const attacker of allChars){if((!attacker.isPunching&&!attacker.isKicking)||attacker.justHit)continue;let isActive=false;if(attacker.isPunching){const punchProgress=(30-attacker.punchCooldown)/30;if(punchProgress>=0.3&&punchProgress<=0.6)isActive=true}else if(attacker.isKicking){const kickProgress=(45-attacker.kickCooldown)/45;if(kickProgress>=0.3&&kickProgress<=0.5)isActive=true}if(!isActive)continue;const isPunch=attacker.isPunching;const damage=(attacker===player&&player.isPoweredUp&&currentLevel===1)?100:(isPunch?PUNCH_DAMAGE:KICK_DAMAGE);const hitboxX=attacker.x+attacker.width/2+(isPunch?25:30)*attacker.direction;const hitboxY=attacker.y+(isPunch?20:40);const targets=attacker===player?enemies:[player];for(const target of targets){if(target.invulnerable)continue;
+		if(hitboxX>target.x&&hitboxX<target.x+target.width&&hitboxY>target.y&&hitboxY<target.y+target.height){target.health-=damage;target.vx=KNOCKBACK_X*attacker.direction;target.vy=-KNOCKBACK_Y;target.onGround=false;attacker.justHit=true;createBloodSplat(hitboxX,hitboxY,15);break}}}
+		
+		*/
+		// --- CORRECTED Punch and Kick Collision Logic ---
+    const allChars = [player, ...enemies];
+    for (const attacker of allChars) {
+        if ((!attacker.isPunching && !attacker.isKicking) || attacker.justHit) continue;
+
+        let isActive = false;
+        // Check if the attack is in its "active" frames
+        if (attacker.isPunching) {
+            const punchProgress = (30 - attacker.punchCooldown) / 30;
+            if (punchProgress >= 0.3 && punchProgress <= 0.6) isActive = true;
+        } else if (attacker.isKicking) {
+            const kickProgress = (45 - attacker.kickCooldown) / 45;
+            if (kickProgress >= 0.3 && kickProgress <= 0.5) isActive = true;
+        }
+
+        if (!isActive) continue;
+
+        const isPunch = attacker.isPunching;
+        
+        // NEW: Define a rectangular hitbox instead of a single point
+        let hitbox = { x: 0, y: 0, width: 0, height: 0 };
+        if (isPunch) {
+            hitbox.width = 35;
+            hitbox.height = 15;
+            hitbox.y = attacker.y + 20;
+            // Position the hitbox in front of the player depending on direction
+            hitbox.x = (attacker.direction > 0) ? attacker.x + attacker.width : attacker.x - hitbox.width;
+        } else { // Kick
+            hitbox.width = 40;
+            hitbox.height = 15;
+            hitbox.y = attacker.y + 35;
+            hitbox.x = (attacker.direction > 0) ? attacker.x + attacker.width : attacker.x - hitbox.width;
+        }
+
+        const targets = attacker === player ? enemies : [player];
+        for (const target of targets) {
+            if (target.invulnerable) continue;
+
+            // NEW: Check for rectangle-to-rectangle overlap
+            if (hitbox.x < target.x + target.width &&
+                hitbox.x + hitbox.width > target.x &&
+                hitbox.y < target.y + target.height &&
+                hitbox.y + hitbox.height > target.y) {
+
+                // Apply damage and knockback if the hit connects
+                target.health -= isPunch ? PUNCH_DAMAGE : KICK_DAMAGE;
+                target.vx = KNOCKBACK_X * attacker.direction;
+                target.vy = -KNOCKBACK_Y;
+                target.onGround = false;
+                attacker.justHit = true;
+                createBloodSplat(hitbox.x + hitbox.width / 2, hitbox.y + hitbox.height / 2, 15);
+                break; // Stop checking after a hit
+            }
+        }
+    }
+}
+		
+		
+		
+		
+		
+		
+    function updateParticles() { bloodParticles=bloodParticles.filter(p=>{p.vy+=GRAVITY*0.5;p.x+=p.vx;p.y+=p.vy;p.life--;p.radius*=0.98;return p.life>0&&p.radius>0.5});shockwaves=shockwaves.filter(s=>{s.radius+=(s.maxRadius-s.radius)*0.1;s.opacity-=0.04;return s.opacity>0}); }
+    function shoot(shooter, angle = null) { const gunTipX=shooter.x+shooter.width/2+(CHARACTER_WIDTH/2+15)*shooter.direction;const gunTipY=shooter.y+25;const isPlayerShooting=shooter===player;const isEnemyShooting=shooter!==player;const isBurstShot=(isPlayerShooting&&player.isPoweredUp&&currentLevel===2)||(isPlayerShooting&&currentLevel>=3)||(isEnemyShooting&&currentLevel>=4);if(isBurstShot){const bulletCount=(isPlayerShooting)?4:2;for(let i=0;i<bulletCount;i++){setTimeout(()=>{const spread=(Math.random()-.5)*1;const damage=(isPlayerShooting&&player.isPoweredUp&&currentLevel===2)?POWER_BULLET_DAMAGE:BULLET_DAMAGE;const isPower=isEnemyShooting?currentLevel>=5:(isPlayerShooting&&player.isPoweredUp);bullets.push({x:gunTipX,y:gunTipY,vx:10*shooter.direction,vy:spread,owner:shooter,damage:damage,isPowerShot:isPower})},i*75)}}else{let vx=10*shooter.direction,vy=0;if(angle!==null){vx=Math.cos(angle)*10;vy=Math.sin(angle)*10}bullets.push({x:gunTipX,y:gunTipY,vx:vx,vy:vy,owner:shooter,damage:BULLET_DAMAGE,isPowerShot:isEnemyShooting&&currentLevel>=6})}}
+    function createBloodSplat(x, y, count) { for (let i = 0; i < count; i++) { bloodParticles.push({ x, y, vx: (Math.random() - .5) * 6, vy: (Math.random() - .5) * 6 - 2, radius: Math.random() * 3 + 1, life: 60 }); } }
+    function startNextLevel() { currentLevel++; levelTransitioning = true; setTimeout(() => { levelTransitioning = false; startLevel(currentLevel, true) }, 3000); }
+    
+	function startLevel(levelNum, resetLives = true) {
+        currentLevel = levelNum;
+        if (resetLives) {
+            if (levelNum >= 6) { playerLives = 6; }
+            else if (levelNum >= 3) { playerLives = 3; }
+            else { playerLives = 2; }
+			successfulRounds = 0;
+        }
+        
+        const instructionDiv = document.getElementById('instructions');
+        if (instructionDiv) { instructionDiv.textContent = levelInstructions[levelNum] || ''; }
+		
+		if(levelNum < 8){
+            respawnPlayer();
+		}
+		
+        bullets=[]; bloodParticles=[]; enemies=[]; shockwaves=[]; helicopters=[]; lions=[]; projectiles=[]; grapplingRope=null; lionsHaveSpawned=false; lionsSpawnedCount=0;
+        isPlayerBeingEaten=false; deathSequenceTimer=0; bump=null; ants=[];
+		godModeVictoryActive = false; godModeVictoryTimer = 0; freezeVictoryAnimation = false;
+        
+        if (levelNum === 1) setupLevel1();
+        else if (levelNum === 2) setupLevel2();
+        else if (levelNum === 3) setupLevel3();
+        else if (levelNum === 4) setupLevel4();
+        else if (levelNum === 5) setupLevel5();
+        else if (levelNum === 6) setupLevel6();
+        else if (levelNum === 7) setupLevel7();
+        else if (levelNum === 8) {
+            //setupLevel8();
+            return;		
+        }
+        nextPowerUpSpawnTimer = 300;
+		 updateTouchControls();
+    }
+	
+	
+    function checkGameState() {
+        if (currentLevel >= 7) return;
+        enemies = enemies.filter(e => e.health > 0);
+        if (gameOver) return;
+        
+        if (currentLevel === 6 && enemies.length === 1 && !lionsHaveSpawned) {
+            spawnNextLion();
+        }
+        
+        if (enemies.length === 0 && helicopters.length === 0 && lions.length === 0) {
+            if (currentLevel === 6 && !lionsHaveSpawned) {
+                spawnNextLion();
+                return; 
+            }
+            if (currentLevel < 8) { startNextLevel(); }
+            else { gameOver = true; gameOverMessage = 'CONGRATULATIONS! YOU WIN!'; }
+        }
+    }
+    function updatePowerUps() { if(!powerUp){nextPowerUpSpawnTimer--;if(nextPowerUpSpawnTimer<=0){const location=powerUpSpawnLocations[Math.floor(Math.random()*powerUpSpawnLocations.length)];powerUp={x:location.x,y:location.y,radius:10};nextPowerUpSpawnTimer=600+Math.random()*300}}if(powerUp){const dx=player.x+player.width/2-powerUp.x;const dy=player.y+player.height/2-powerUp.y;const distance=Math.sqrt(dx*dx+dy*dy);if(distance<player.width/2+powerUp.radius){player.isPoweredUp=true;player.powerUpTimer=POWERUP_DURATION;powerUp=null}}}
+    function executeGroundPound() { let playerPlatform=null;for(const p of platforms){if(player.y+player.height>=p.y&&player.y+player.height<=p.y+p.height+5){playerPlatform=p;break}}if(!playerPlatform)return;shockwaves.push({x:player.x+player.width/2,y:player.y+player.height,radius:10,maxRadius:150,opacity:1});enemies.forEach(enemy=>{if(!enemy.onGround)return;let enemyPlatform=null;for(const p of platforms){if(enemy.y+enemy.height>=p.y&&enemy.y+enemy.height<=p.y+p.height+5){enemyPlatform=p;break}}if(enemyPlatform===playerPlatform){enemy.health-=enemy.maxHealth/2;enemy.isStunned=true;enemy.stunTimer=90}})}
+    function checkCheatCodes() { const sequence=keySequence.join('');if(sequence.endsWith('asdf2')){startLevel(2,true);keySequence=[]}else if(sequence.endsWith('asdf3')){startLevel(3,true);keySequence=[]}else if(sequence.endsWith('asdf4')){startLevel(4,true);keySequence=[]}else if(sequence.endsWith('asdf5')){startLevel(5,true);keySequence=[]}else if(sequence.endsWith('asdf6')){startLevel(6,true);keySequence=[]}else if(sequence.endsWith('asdf7')){startLevel(7,true);keySequence=[]}else if(sequence.endsWith('asdf8')){startLevel(8,true);keySequence=[]}}
+    function updateAnts() { ants.forEach(ant=>{if(deathSequenceTimer<=TEXT_PHASE_START&&ants.length>100){ant.vy-=0.2;ant.vx*=0.9}else{const angle=Math.atan2(playerDeathPos.y+CHARACTER_HEIGHT/2-ant.y,playerDeathPos.x+CHARACTER_WIDTH/2-ant.x);const dist=Math.hypot(playerDeathPos.x-ant.x,playerDeathPos.y-ant.y);ant.vx+=Math.cos(angle)*0.5-Math.sin(angle)*0.2;ant.vy+=Math.sin(angle)*0.5+Math.cos(angle)*0.2;ant.vx*=0.95;ant.vy*=0.95}ant.x+=ant.vx;ant.y+=ant.vy})}
+    function checkBumpCollision() { if(bump&&!bump.triggered){if(player.x<bump.x+bump.width&&player.x+player.width>bump.x&&player.y+player.height>bump.y&&player.y+player.height<bump.y+bump.height+20){isPlayerBeingEaten=true;deathSequenceTimer=DEATH_SEQUENCE_DURATION;bump.triggered=true;playerDeathPos.x=player.x;playerDeathPos.y=player.y;for(let i=0;i<500;i++){ants.push({x:bump.x,y:bump.y,vx:(Math.random()-.5)*4,vy:(Math.random()-.5)*4})}}}}
+    function updateBossBattle() {
+        if (gameOver) return;
+        if(bossBattleState === 'intro') {
+            qteTimer--;
+            if(qteTimer <= 0) {
+                bossBattleState = 'round_announce';
+                qteTimer = 90;
+            }
+        } else if (bossBattleState === 'round_announce') {
+            qteTimer--;
+            if(qteTimer <= 0) {
+                bossBattleState = 'idle';
+            }
+        } else if (bossBattleState === 'idle') {
+            bossEffects = [];
+            const attacks = ['rain', 'fire', 'thunder', 'snakes'];
+            currentBossAttack = attacks[Math.floor(Math.random() * attacks.length)];
+            createBossAttackEffect(currentBossAttack);
+            playerAction = null;
+            qteTimer = QTE_TIMER_DURATION;
+            bossBattleState = 'attacking';
+        } else if (bossBattleState === 'attacking') {
+            qteTimer--;
+            if (currentBossAttack !== 'thunder' && globalTimer % 10 === 0) { createBossAttackEffect(currentBossAttack + '_stream'); }
+            let correctKey = '';
+            if (currentBossAttack === 'rain' || currentBossAttack === 'thunder') correctKey = 'KeyQ';
+            if (currentBossAttack === 'fire') correctKey = 'KeyW';
+            if (currentBossAttack === 'snakes') correctKey = 'KeyE';
+
+            if (keys[correctKey]) {
+                playerAction = correctKey; battleResultText = 'SUCCESS!'; successfulRounds++; bossBattleState = 'result'; createBossAttackEffect('player_' + currentBossAttack); qteTimer = 0;
+            } else if (qteTimer <= 0) {
+                playerAction = 'fail'; battleResultText = 'TOO SLOW!'; playerChances--; bossBattleState = 'result'; qteTimer = 0;
+            } else if ((keys['KeyQ'] || keys['KeyW'] || keys['KeyE']) && !keys[correctKey]) {
+                playerAction = 'fail'; battleResultText = 'WRONG!'; playerChances--; bossBattleState = 'result'; qteTimer = 0;
+            }
+        } else if (bossBattleState === 'result') {
+            qteTimer++;
+            if (qteTimer > 60) {
+				if (successfulRounds >= 4) {
+					godModeVictoryActive = true;
+					godModeVictoryTimer = 0;
+				} else if (playerChances <= 0) {
+                    gameOver = true;
+                    gameOverMessage = 'THE GODS HAVE DEFEATED YOU.';
+                } else if (roundNumber >= BOSS_BATTLE_ROUNDS) {
+                    gameOver = true;
+                    gameOverMessage = 'YOU HAVE ENDURED THE TRIAL!';
+                } else {
+                    roundNumber++;
+                    bossBattleState = 'round_announce';
+                    qteTimer = 90;
+                }
+            }
+        }
+    }
+    function updateBossEffects() {
+        bossEffects = bossEffects.filter(effect => {
+            effect.life--;
+            if(effect.type.includes('rain_particle')) { effect.y += effect.vy; if(effect.y > 580 && !effect.splashed) { effect.splashed = true; effect.life = 10; } }
+            else if (effect.type === 'fire_arrow' || effect.type === 'snake_arrow') { effect.x += effect.vx; effect.y += effect.vy; if(effect.type === 'snake_arrow') effect.x += Math.sin(effect.y/10) * 3; } 
+            else if (effect.type === 'shell') { effect.radius += 10; } 
+            else if (effect.type === 'mongoose') { effect.opacity = effect.life / 60; }
+            return effect.life > 0;
+        });
+    }
+    function createBossAttackEffect(type) {
+        const targetX = player.x + player.width/2;
+        const targetY = player.y + player.height/2;
+        const startX = Math.random() * canvas.width;
+        if(type === 'rain' || type === 'rain_stream') {
+            for(let i = 0; i < 10; i++) { bossEffects.push({ type: 'rain_particle', x: Math.random() * canvas.width, y: -Math.random() * 50, vy: 15 + Math.random() * 5, life: 100 }); }
+        } else if (type === 'fire' || type === 'fire_stream') {
+            for(let i = 0; i < 3; i++) { const angle = Math.atan2(targetY - (-50), targetX - (startX + (Math.random() - 0.5) * 200)); bossEffects.push({ type: 'fire_arrow', x: startX, y: -50 - Math.random() * 50, vx: Math.cos(angle) * 12, vy: Math.sin(angle) * 12, life: 100 }); }
+        } else if (type === 'thunder') {
+            bossEffects.push({ type: 'thunder_flash', life: 10, opacity: 0.8 });
+            const bolt = {type: 'thunder_bolt', life: 30, points: []};
+            let x = canvas.width / 2 + (Math.random() - 0.5) * 400; let y = 0;
+            bolt.points.push({x, y});
+            while(y < 580) { x += (Math.random() - 0.5) * 40; y += Math.random() * 50 + 20; bolt.points.push({x, y}); }
+            bossEffects.push(bolt);
+        } else if (type === 'snakes' || type === 'snakes_stream') {
+             for(let i = 0; i < 2; i++) { const angle = Math.atan2(targetY - (-50), targetX - startX); bossEffects.push({ type: 'snake_arrow', x: startX, y: -50 - Math.random() * 80, vx: Math.cos(angle) * 8, vy: Math.sin(angle) * 8, life: 120 }); }
+        } else if (type === 'player_rain' || type === 'player_thunder') {
+             bossEffects.push({ type: 'shell', life: 60, radius: 0});
+        } else if (type === 'player_fire') {
+             for(let i = 0; i < 40; i++) { bossEffects.push({ type: 'player_rain_particle', x: Math.random() * canvas.width, y: -Math.random() * 50, vy: 15, life: 60 }); }
+        } else if (type === 'player_snakes') {
+             bossEffects.push({ type: 'mongoose', life: 60, x: player.x, y: player.y + player.height, opacity: 1});
+        }
+    }
+    function drawBossBattle() {
+        ctx.fillStyle = '#111'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#FFD700'; ctx.fillRect(0, 580, canvas.width, 20);
+         
+		 if (startlevel8){
+		 player = createGod(150, 430, true);
+        boss = createGod(550, 430, false);
+        roundNumber = 1;
+        playerChances = BOSS_BATTLE_CHANCES;
+        battleResultText = '';
+        bossBattleState = 'intro';
+        qteTimer = 90;
+		startlevel8=false;
+        }
+		 
+		 
+        function drawGod(character, isShining) { ctx.save();if(isShining){ctx.shadowBlur=20;ctx.shadowColor=isShining==='success'?'cyan':'red'}const scale=3;ctx.strokeStyle=isShining?'white':'black';ctx.lineWidth=3;const x=character.x+character.width/2;const y=
+		character.y;
+		const headRadius=8*scale;const bodyLength=20*scale;const armLength=15*scale;const legLength=20*scale;ctx.beginPath();ctx.arc(x,y+headRadius,headRadius,0,Math.PI*2);ctx.moveTo(x,y+headRadius*2);ctx.lineTo(x,y+headRadius*2+bodyLength);ctx.stroke();const armY=y+headRadius*2+5*scale;const legY=y+headRadius*2+bodyLength;ctx.beginPath();ctx.moveTo(x,armY);ctx.lineTo(x-armLength,armY+10*scale);ctx.moveTo(x,armY);ctx.lineTo(x+armLength,armY+10*scale);ctx.stroke();ctx.beginPath();ctx.moveTo(x,legY);ctx.lineTo(x-legLength/2,legY+legLength);ctx.moveTo(x,legY);ctx.lineTo(x+legLength/2,legY+legLength);ctx.stroke();ctx.restore()}
+
+        drawGod(player, bossBattleState === 'result' ? (playerAction !== 'fail' ? 'success' : 'fail') : null);
+        drawGod(boss, bossBattleState === 'attacking' || (bossBattleState === 'result' && playerAction === 'fail'));
+
+        bossEffects.forEach(effect => {
+            if(effect.type.includes('rain_particle')) {
+                if(effect.splashed) { ctx.strokeStyle=effect.type.includes('player')?`rgba(0,255,255,${effect.life/10})`:`rgba(0,0,255,${effect.life/10})`;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(effect.x-5,effect.y);ctx.lineTo(effect.x-10,effect.y-5);ctx.moveTo(effect.x+5,effect.y);ctx.lineTo(effect.x+10,effect.y-5);ctx.stroke() }
+                else { ctx.strokeStyle=effect.type.includes('player')?'#00FFFF':'#0000FF';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(effect.x,effect.y);ctx.lineTo(effect.x,effect.y-20);ctx.stroke() }
+            } else if (effect.type === 'fire_arrow') {
+                const angle = Math.atan2(effect.vy, effect.vx); ctx.save(); ctx.translate(effect.x, effect.y); ctx.rotate(angle);
+                ctx.fillStyle = 'orange'; ctx.beginPath(); ctx.ellipse(0, 0, 15, 5, 0, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = 'red'; ctx.beginPath(); ctx.ellipse(5, 0, 10, 4, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+            } else if (effect.type === 'thunder_flash') {
+                ctx.fillStyle = `rgba(255, 255, 255, ${effect.opacity})`; ctx.fillRect(0,0,canvas.width, canvas.height);
+            } else if (effect.type === 'thunder_bolt') {
+                ctx.strokeStyle='white';ctx.lineWidth=5;ctx.shadowBlur=20;ctx.shadowColor='yellow';ctx.beginPath();ctx.moveTo(effect.points[0].x,effect.points[0].y);for(let i=1;i<effect.points.length;i++){ctx.lineTo(effect.points[i].x,effect.points[i].y)}ctx.stroke();ctx.shadowBlur=0;
+            } else if (effect.type === 'snake_arrow') {
+                ctx.strokeStyle='green';ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(effect.x,effect.y);ctx.lineTo(effect.x-effect.vx,effect.y-effect.vy);ctx.stroke();ctx.fillStyle='red';ctx.beginPath();ctx.arc(effect.x,effect.y,3,0,Math.PI*2);ctx.fill();
+            } else if (effect.type === 'shell') {
+                effect.radius+=10;ctx.strokeStyle=`rgba(0,255,255,${effect.life/60})`;ctx.lineWidth=8;ctx.beginPath();ctx.arc(player.x+player.width/2,player.y+player.height/2,effect.radius,0,Math.PI*2);ctx.stroke();
+            } else if (effect.type === 'mongoose') {
+                ctx.fillStyle=`rgba(150,150,150,${effect.opacity})`;ctx.beginPath();ctx.ellipse(effect.x,effect.y-20,30,15,0,0,Math.PI*2);ctx.fill();
+            }
+        });
+
+        ctx.font='24px "Courier New"';ctx.fillStyle='white';ctx.textAlign='center';
+        ctx.fillText(`Round: ${roundNumber} / ${BOSS_BATTLE_ROUNDS}`,canvas.width/2,50);
+        ctx.fillText(`Chances: ${playerChances}`,canvas.width/2,80);
+
+        if(bossBattleState==='attacking'){const barWidth=QTE_TIMER_DURATION*3;const timerWidth=qteTimer*3;ctx.fillStyle='red';ctx.fillRect(canvas.width/2-barWidth/2,100,barWidth,10);ctx.fillStyle='green';ctx.fillRect(canvas.width/2-barWidth/2,100,timerWidth,10);ctx.font='20px "Courier New"';ctx.fillStyle='white';if(currentBossAttack==='rain'||currentBossAttack==='thunder')ctx.fillText("Counter: SHELL [Q]",canvas.width/2,130);if(currentBossAttack==='fire')ctx.fillText("Counter: RAIN [W]",canvas.width/2,130);if(currentBossAttack==='snakes')ctx.fillText("Counter: MONGOOSE [E]",canvas.width/2,130)}
+        else if(bossBattleState==='result'){ctx.font='60px "Courier New"';ctx.fillStyle=playerAction==='fail'?'red':'cyan';ctx.fillText(battleResultText,canvas.width/2,canvas.height/2)}
+        else if(bossBattleState==='intro'){ctx.font='40px "Courier New"';ctx.fillText("FINAL BATTLE!",canvas.width/2,canvas.height/2)}
+        else if(bossBattleState==='round_announce'){ctx.font='50px "Courier New"';ctx.fillText(`Round ${roundNumber}`,canvas.width/2,canvas.height/2);if(qteTimer < 45) {ctx.font='30px "Courier New"';ctx.fillText("FIGHT!",canvas.width/2,canvas.height/2+50)}}
+    }
+	
+	function drawGodVictory() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear the canvas
+        ctx.fillStyle = '#111'; ctx.fillRect(0, 0, canvas.width, canvas.height); // Dark background
+        ctx.fillStyle = '#FFD700'; ctx.fillRect(0, 580, canvas.width, 20); // Ground
+
+        // Draw the player in a meditative state
+        ctx.save();
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = 3;
+        const scale = 3;
+        const x = player.x + player.width / 2;
+        const y = player.y; // Keep base y for consistency
+        const headRadius = 8 * scale;
+        const bodyLength = 20 * scale;
+
+        // Head
+        ctx.beginPath();
+        ctx.arc(x, y + headRadius, headRadius, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Body (sitting cross-legged)
+        ctx.beginPath();
+        ctx.moveTo(x, y + headRadius * 2);
+        ctx.lineTo(x, y + headRadius * 2 + bodyLength);
+        ctx.stroke();
+
+        // Arms (meditative pose)
+        const armY = y + headRadius * 2 + bodyLength * 0.7; // Lower arms for resting on lap
+        ctx.beginPath();
+        ctx.moveTo(x, armY);
+        ctx.lineTo(x - 10 * scale, armY + 5 * scale); // Left arm
+        ctx.moveTo(x, armY);
+        ctx.lineTo(x + 10 * scale, armY + 5 * scale); // Right arm
+        ctx.stroke();
+
+        // Legs (cross-legged, simplified)
+        const legY = y + headRadius * 2 + bodyLength;
+        ctx.beginPath();
+        ctx.arc(x, legY + 15 * scale, 20 * scale, Math.PI * 0.1, Math.PI * 0.9); // Representation of crossed legs
+        ctx.stroke();
+        ctx.restore();
+
+        // Radiating effects (cyan glow)
+        let pulse = 1.0; // Default to static
+		if (!freezeVictoryAnimation) {
+			pulse = Math.sin(godModeVictoryTimer / 10) * 0.1 + 0.9;
+		}
+
+        const gradient = ctx.createRadialGradient(x, y + player.height / 2, 0, x, y + player.height / 2, 100 * pulse);
+        gradient.addColorStop(0, `rgba(0, 255, 255, ${0.4 * pulse})`); // Inner glow
+        gradient.addColorStop(1, `rgba(0, 255, 255, ${0 * pulse})`); // Outer fade
+
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(x, y + player.height / 2, 100 * pulse, 0, Math.PI * 2);
+        ctx.fill();
+
+        // "Peace" text (subtly in this stage)
+        ctx.font='80px "Courier New"';
+        ctx.fillStyle='rgba(255,255,255,0.2)'; // Faded
+        ctx.textAlign='center';
+        ctx.fillText('Peace', canvas.width/2, canvas.height/2);
+    }
+
+    // --- MAIN GAME LOOP ---
+    /* function gameLoop() {
+        globalTimer++;
+        if (currentLevel === 8) {
+            updateBossBattle();
+            updateBossEffects();
+            drawBossBattle();
+        } else if (isPlayerBeingEaten) {
+            updateAnts();
+            deathSequenceTimer--;
+            if(deathSequenceTimer > DEATH_SEQUENCE_DURATION - 240 && deathSequenceTimer % 10 === 0) { createBloodSplat(playerDeathPos.x + Math.random() * CHARACTER_WIDTH, playerDeathPos.y + Math.random() * CHARACTER_HEIGHT, 1); }
+            if (deathSequenceTimer <= 0) { isPlayerBeingEaten = false; startNextLevel(); }
+        } else if (!gameOver && !levelTransitioning) {
+            handleInput();
+            updateCharacter(player);
+            enemies.forEach(e => { updateEnemyAI(e); updateCharacter(e); });
+            updateHelicopters();
+            updateLions();
+            updateProjectiles();
+            updateGrapplingRope();
+            updatePowerUps();
+            handleCollisions();
+            updateParticles();
+            checkGameState();
+            if (currentLevel === 7) checkBumpCollision();
+        }
+        
+        if (currentLevel < 8 && !isPlayerBeingEaten) {
+            drawAll();
+            drawUI();
+        }
+
+        if (gameOver && keys['KeyR']) { gameOver = false; startLevel(1, true); }
+        requestAnimationFrame(gameLoop);
+    } */
+
+
+/*
+ function gameLoop() {
+        globalTimer++;
+ if (godModeVictoryActive) { // <-- NEW: Handle God Mode Victory
+            godModeVictoryTimer++;
+            // Stage 1: Display "GOD MODE: VICTORY!"
+            if (godModeVictoryTimer < 180) { // 3 seconds
+                drawBossBattle(); // Show the final battle screen for a moment
+                ctx.fillStyle = 'rgba(0,0,0,0.7)'; // Darken
+                ctx.fillRect(0,0,canvas.width,canvas.height);
+                ctx.font='60px "Courier New"';
+                ctx.fillStyle='cyan';
+                ctx.textAlign='center';
+                ctx.fillText('GOD MODE: VICTORY!', canvas.width/2, canvas.height/2);
+            }
+            // Stage 2: Meditative pose + radiations
+            else if (godModeVictoryTimer >= 180 && godModeVictoryTimer < 480) { // Next 5 seconds
+                drawGodVictory();
+            }
+            // Stage 3: Fade to black with "Peace"
+            else if (godModeVictoryTimer >= 480 && godModeVictoryTimer < 600) { // Next 2 seconds
+                let opacity = (godModeVictoryTimer - 480) / 120; // Fade from 0 to 1
+                ctx.fillStyle = `rgba(0,0,0,${opacity})`;
+                ctx.fillRect(0,0,canvas.width,canvas.height);
+                if (opacity > 0.5) {
+                    ctx.font='100px "Courier New"';
+                    ctx.fillStyle='white';
+                    ctx.textAlign='center';
+                    ctx.fillText('Peace', canvas.width/2, canvas.height/2);
+                }
+            }
+            // Stage 4: Final game over
+            else {
+                gameOver = true;
+                gameOverMessage = 'You have transcended.';
+                // Prevent further updates after final message
+                ctx.fillStyle='black';
+                ctx.fillRect(0,0,canvas.width,canvas.height);
+                ctx.font='100px "Courier New"';
+                ctx.fillStyle='white';
+                ctx.textAlign='center';
+                ctx.fillText('Peace', canvas.width/2, canvas.height/2);
+                ctx.font='20px "Courier New"';
+                ctx.fillText('Press R to Restart', canvas.width/2, canvas.height/2+80);
+            }
+        }
+        else if (currentLevel === 8) {
+            updateBossBattle();
+            updateBossEffects();
+            drawBossBattle();
+        } if (isPlayerBeingEaten) {
+		//console.log('inside isPlayerBeingEaten if loop');
+            updateAnts();
+            deathSequenceTimer--;
+            if(deathSequenceTimer > DEATH_SEQUENCE_DURATION - 240 && deathSequenceTimer % 10 === 0) { createBloodSplat(playerDeathPos.x + Math.random() * CHARACTER_WIDTH, playerDeathPos.y + Math.random() * CHARACTER_HEIGHT, 1); }
+            if (deathSequenceTimer <= 0) {
+                isPlayerBeingEaten = false;
+                startNextLevel();
+            }
+        } else if (!gameOver && !levelTransitioning) {
+            handleInput();
+            updateCharacter(player);
+            enemies.forEach(e => { updateEnemyAI(e); updateCharacter(e); });
+            updateHelicopters();
+			handlePowerUpAttack();
+            updateLions();
+            updateProjectiles();
+            updateGrapplingRope();
+            updatePowerUps();
+            handleCollisions();
+            updateParticles();
+            checkGameState();
+            if (currentLevel === 7) checkBumpCollision();
+        }
+		
+		 //if (currentLevel < 8 && !isPlayerBeingEaten) {
+           // drawAll();
+            //drawUI();
+        //} 
+		
+		 if (currentLevel < 8) {
+            drawAll();
+            drawUI();
+        } 
+
+        if (gameOver && keys['KeyR']) { gameOver = false; startLevel(1, true); }
+        requestAnimationFrame(gameLoop);
+		}
+
+
+*/
+
+
+// ADD THIS ENTIRE FUNCTION
+function resizeCanvas() {
+    const aspectRatio = gameWidth / gameHeight;
+    let newWidth = window.innerWidth;
+    let newHeight = window.innerHeight;
+    const windowRatio = newWidth / newHeight;
+
+    if (windowRatio > aspectRatio) {
+        // Window is wider than the game, so height is the constraint
+        newWidth = newHeight * aspectRatio;
+    } else {
+        // Window is taller than the game, so width is the constraint
+        newHeight = newWidth / aspectRatio;
+    }
+
+    // Apply the new size to the container, which holds the canvas and controls
+    canvas.style.width = `${newWidth}px`;
+    canvas.style.height = `${newHeight}px`;
+}
+
+
+/*
+  function resizeCanvas() {
+        const aspectRatio = gameWidth / gameHeight;
+        let newWidth = window.innerWidth;
+        let newHeight = window.innerHeight;
+        const windowRatio = newWidth / newHeight;
+
+        if (windowRatio > aspectRatio) {
+            newWidth = newHeight * aspectRatio;
+        } else {
+            newHeight = newWidth / aspectRatio;
+        }
+
+        canvas.style.width = `${newWidth}px`;
+        canvas.style.height = `${newHeight}px`;
+    } */
+
+
+
+
+
+ function handlePowerUpAttack() {
+        if (player.isPoweredUp && currentLevel === 3) {
+            if (globalTimer % 15 === 0) { // Slower, more rhythmic rate
+                const bulletSpeed = 7;
+                const pX = player.x + player.width / 2;
+                const pY = player.y + player.height / 2;
+
+                // Shoot right, left, and up from the player
+                bullets.push({ x: pX, y: pY, vx: bulletSpeed, vy: 0, owner: player, damage: POWER_BULLET_DAMAGE, isPowerShot: true });
+                bullets.push({ x: pX, y: pY, vx: -bulletSpeed, vy: 0, owner: player, damage: POWER_BULLET_DAMAGE, isPowerShot: true });
+                bullets.push({ x: pX, y: pY, vx: 0, vy: -bulletSpeed, owner: player, damage: POWER_BULLET_DAMAGE, isPowerShot: true });
+            }
+        }
+    }
+
+// --- MAIN GAME LOOP ---
+function gameLoop() {
+    globalTimer++;
+
+    // This new structure correctly handles all game states
+    if (godModeVictoryActive) {
+        // STATE 1: God Mode Victory Sequence is playing
+        godModeVictoryTimer++;
+        if (godModeVictoryTimer < 180) { // 3 seconds
+            drawBossBattle();
+            ctx.fillStyle = 'rgba(0,0,0,0.7)';
+            ctx.fillRect(0,0,canvas.width,canvas.height);
+            ctx.font='60px "Courier New"';
+            ctx.fillStyle='cyan';
+            ctx.textAlign='center';
+            ctx.fillText('GOD MODE: VICTORY!', canvas.width/2, canvas.height/2);
+        } else if (godModeVictoryTimer >= 180 && godModeVictoryTimer < 480) {
+            freezeVictoryAnimation = false;
+            drawGodVictory();
+        } else if (godModeVictoryTimer >= 480 && godModeVictoryTimer < 600) {
+            freezeVictoryAnimation = true; // Freeze the animation
+            drawGodVictory(); // Draw one last static frame
+            let opacity = (godModeVictoryTimer - 480) / 120;
+            ctx.fillStyle = `rgba(0,0,0,${opacity})`;
+            ctx.fillRect(0,0,canvas.width,canvas.height);
+            if (opacity > 0.5) {
+                ctx.font='100px "Courier New"';
+                ctx.fillStyle='white';
+                ctx.textAlign='center';
+                ctx.fillText('Peace', canvas.width/2, canvas.height/2);
+            }
+        } else {
+            gameOver = true;
+            gameOverMessage = 'You have transcended.';
+            ctx.fillStyle='black';
+            ctx.fillRect(0,0,canvas.width,canvas.height);
+            ctx.font='100px "Courier New"';
+            ctx.fillStyle='white';
+            ctx.textAlign='center';
+            ctx.fillText('Peace', canvas.width/2, canvas.height/2);
+            ctx.font='20px "Courier New"';
+            ctx.fillText('Press R to Restart', canvas.width/2, canvas.height/2+80);
+        }
+    } else if (isPlayerBeingEaten) {
+        // STATE 3: The Ant Swarm Cinematic is playing
+        updateAnts();
+        deathSequenceTimer--;
+        if(deathSequenceTimer > DEATH_SEQUENCE_DURATION - 240 && deathSequenceTimer % 10 === 0) { createBloodSplat(playerDeathPos.x + Math.random() * CHARACTER_WIDTH, playerDeathPos.y + Math.random() * CHARACTER_HEIGHT, 1); }
+        if (deathSequenceTimer <= 0) {
+            isPlayerBeingEaten = false;
+            startNextLevel();
+        }
+    } else if (levelTransitioning || gameOver) {
+        // STATE 3: Game is paused for a transition or game over screen
+        // No updates, just wait. Drawing is handled below.
+    } else {
+        // STATE 4: Normal gameplay logic for the current level
+        if (currentLevel === 8) {
+            updateBossBattle();
+            updateBossEffects();
+drawBossBattle();
+updateTouchControls();
+        } else {
+            handleInput();
+            updateCharacter(player);
+            enemies.forEach(e => { updateEnemyAI(e); updateCharacter(e); });
+            updateHelicopters();
+            updateLions();
+		handlePowerUpAttack();
+            updateProjectiles();
+            updateGrapplingRope();
+            updatePowerUps();
+            handleCollisions();
+            updateParticles();
+            checkGameState();
+            if (currentLevel === 7) checkBumpCollision();
+        }
+    }
+    
+    // --- DRAWING LOGIC ---
+    // This runs every frame regardless of the state
+    if (currentLevel === 8 && !godModeVictoryActive) {
+        drawBossBattle();
+    } else {
+	if( currentLevel<8){
+        drawAll();
+        drawUI(); }
+    }
+
+    // Restart logic is always checked
+    if (gameOver && keys['KeyR']) {
+        gameOver = false;
+        startLevel(1, true);
+    }
+    requestAnimationFrame(gameLoop);
+}
+
+
+
+    // --- INITIALIZE AND START ---
+    //startLevel(1, true);
+	setupInput(); // <-- ADD THIS LINE to activate keyboard and touch controls
+startLevel(1, true);
+
+// Add window resizing to make the game fit the screen
+window.addEventListener('resize', resizeCanvas, false);
+resizeCanvas(); // Call it once to set the initial size
+updateTouchControls();
+    gameLoop();
+</script>
+
+</body>
+</html>
